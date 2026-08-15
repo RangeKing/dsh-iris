@@ -1,0 +1,52 @@
+# Dependencies and package-manager state
+node_modules/
+.pnpm-store/
+
+# Build output and test coverage
+lib/
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Tool caches and local runtime state
+.cache/
+.vite/
+.turbo/
+.tmp/
+.scratch/
+tmp/
+temp/
+*.pid
+
+# Logs and debug output
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+
+# macOS and editor metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Locally generated package archives
+*.tgz
+/docs
+AGENTS.md
+CONTEXT.md
+GLOSSARY.md

@@ -1,0 +1,13 @@
+- insert:
+    - id: dsh-iris
+      name: dsh-iris
+      config:
+        iris:
+          enabled: true
+          policy: auto
+          providers: []
+          logLevel: info
+          discovery:
+            enabled: true
+            cacheTtlMs: 900000
+            maxResults: 10
