@@ -40,15 +40,18 @@ export function skillSummaryCapability(skill: SkillSummary): CapabilityDescripto
  */
 export class DshSkillCapabilitySource {
   private readonly agent: Agent
+  private readonly nativeRouteInCeiling: boolean
 
   constructor(private readonly agentCtx: Context) {
     const agent = (agentCtx as Context & { readonly agent?: Agent }).agent
     if (agent === undefined) throw new Error('dsh-iris: DSH Skill source requires agentCtx.agent')
     this.agent = agent
+    // Capture the preset ceiling before Iris narrows the current Tool surface.
+    this.nativeRouteInCeiling = agentCtx.tools.get(DSH_SKILL_TOOL_NAME, agent) !== undefined
   }
 
   async list(signal?: AbortSignal): Promise<readonly CapabilityDescriptor[]> {
-    if (this.agentCtx.tools.get(DSH_SKILL_TOOL_NAME, this.agent) === undefined) return []
+    if (!this.nativeRouteInCeiling) return []
     const snapshot = await this.agentCtx.skills.snapshot({
       cwd: this.agent.session.header.cwd,
       scope: this.agent,

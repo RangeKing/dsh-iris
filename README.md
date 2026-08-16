@@ -1,87 +1,110 @@
 # dsh-iris
 
-**Progressive capability routing for DeepSeek Harness**
+**Minimal surface. Full capability.**
 
-dsh-iris discovers optional capabilities across DSH, loads only what needs loading, and delegates native capabilities back to the runtime that owns them. It is a lightweight adaptive capability layer on top of DSH.
+Progressive capability disclosure for DeepSeek Harness.
 
-```text
-                   dsh-iris
+**Start minimal. Reveal on demand.**
 
-             Search / Recommend
-                    │
-              Capability Route
-          ┌─────────┼─────────┐
-          │         │         │
-        Tool      Skill      MCP
-          │         │         │
- iris_activate   native    native MCP
-          │       skill       Tool
-    lazy mount      │         │
-          └─────────┼─────────┘
-                    │
-                   DSH
-```
-
-Iris decides where a capability should go. DSH remains the execution authority.
-
-## Unified capability routing
-
-Iris uses kind-qualified identities, so Tool, Skill, and MCP results cannot collide:
+dsh-iris gives every DeepSeek Harness mode a focused initial capability surface, then reveals tools, skills, and connected MCP capabilities only when the task needs them.
 
 ```text
-tool:text_word_count  → iris_activate → lazy Provider mount
-skill:repo-review     → native skill route → DSH skill Tool
-mcp:github/create_issue → native MCP route → mcp__github__create_issue
+DeepSeek Harness
+
+Minimal   Standard   Code   Creator
+   │         │        │       │
+   └─────────┴────────┴───────┘
+                 │
+              dsh-iris
+                 │
+        Minimal Initial Surface
+                 │
+        Progressive Disclosure
+                 │
+       Full Capability Ceiling
 ```
 
-`iris_search` and the explicit `iris_recommend(query)` control search one ranked metadata view. Configured Tool descriptors come from Iris's local Provider Catalog. Skill descriptors are read live from the current Agent's `ctx.skills.snapshot()`. Connected MCP descriptors come from MCP Tools already present in the same Agent's `ctx.tools` view.
+DeepSeek reports that its V4-Flash Code Agent evaluation used DeepSeek Harness in Minimal mode. That is an official setup fact—not proof that a smaller surface always improves performance. Iris turns the minimal-surface idea into a measurable product hypothesis across Harness modes and ships the A/B benchmark needed to test it. See the [evidence ledger](docs/evidence.md).
 
-Search does not read `SKILL.md` bodies. When a Skill is selected, the Agent calls DSH's native `skill` Tool; DSH then validates invocation policy and loads the body through `ctx.skills.get()` with the Agent's own cwd, scope, and cancellation signal.
+## How it works
 
-MCP search does not connect, reconnect, call `tools/list`, or execute a Tool. A connected MCP result has `status: available` and a `dsh-mcp-tool` route, so the Agent can call the registered DSH Tool directly. `iris_activate(mcp:...)` only validates that route and returns `already-available`; it never starts the server again.
+```text
+Harness mode → Capability ceiling → Iris aperture → Model-visible surface
 
-## Capability states
+Search / Recommend / UNKNOWN_TOOL
+                 ↓
+              Resolve
+                 ↓
+            Mode policy
+                 ↓
+       Reveal or lazy activate
+                 ↓
+          next normal DSH step
+```
 
-- **Catalogued** — Iris knows Tool Provider metadata. The Provider has not been imported, applied, or mounted.
-- **Activated** — the Provider was lazily imported and mounted under one Agent-scoped Direct Fiber.
-- **Visible** — DSH's ToolRuntime exposes the capability to the current model-facing surface. In Code Mode, an activated capability remains staged until the next generated `tools:sdk` includes it.
+The capability ceiling remains available. Iris controls the current aperture in stable packs—`core`, `filesystem`, `search`, `coordination`, `delegation`, `creator`, and `extensions`—and expands it monotonically during an Agent session.
 
-These activation states apply to Iris-managed Tools. Native Skills keep DSH's summary-versus-body lifecycle. Connected MCP Tools keep DSH's connection, synchronization, execution, and teardown lifecycle.
+Registered does not mean disclosed:
 
-## Mode policies
+- A configured Tool Provider remains unimported until `iris_activate` or deterministic recovery needs it.
+- A native Skill remains owned and loaded by DSH's `skill` subsystem.
+- A connected MCP Tool remains owned and executed by DSH's MCP and Tool runtimes.
+- `UNKNOWN_TOOL` is a fallback demand signal; Iris never replays the failed call.
 
-| DSH mode | Iris policy | Tool route | Skill route | Connected MCP route | Creation |
-| --- | --- | --- | --- | --- | --- |
-| Minimal | Preserve | Off | No Iris bridge | No Iris bridge | Off |
-| Standard | Adaptive | Trusted local Tool activation | Native DSH `skill` | Direct native Tool | Off |
-| Code | Adaptive + Stable SDK | PTC-compatible Tool only | Native `skill` SDK binding | DSH-generated SDK binding | Off |
-| Creator | Adaptive + Create | Trusted local Tool activation | Native DSH `skill` | Direct native Tool before fallback | Typed fallback |
+## Four modes
+
+| DSH mode | Initial Iris aperture | On-demand behavior | Performance invariant |
+| --- | --- | --- | --- |
+| Minimal | Native Minimal surface | Iris controls and activation are off | Preserve the canonical benchmark control |
+| Standard | Core + Iris controls | Reveal native packs or lazily activate configured Tools | Avoid presenting the full Standard schema set up front |
+| Code | Native `run_code` presentation + current core SDK | Stage PTC-compatible additions for the next step | Keep `tools:sdk` stable within one model step |
+| Creator | Core + Iris controls | Reveal Creator/Cordis pack only for explicit creator intent | Preserve the full Creator ceiling without front-loading it |
+
+Mode determines the ceiling. Iris determines the current surface.
+
+### Minimal reasoning scaffold
+
+Standard, Code, and the initial Creator aperture use the exact DSH Minimal persona—`You are a helpful software engineer assistant.`—as an Agent-scoped prompt shadow, followed by a short static reasoning-voice section that requests `We need …` / `Need to …` instead of first-person staging. Iris does not rewrite model output or change mode-specific Tool, SDK, approval, guard, or execution protocols. Minimal itself remains untouched. When Creator reveals its privileged Cordis pack, Iris removes the persona shadow and restores DSH's complete trust-critical Creator persona while retaining the wording-only voice section.
+
+This is a scaffold fingerprint, not a capability or quality metric. The wording observation and mechanism follow the experiments documented by [dsh-routing-suite](https://github.com/yjh051108/dsh-routing-suite). In Iris's one-run-per-mode [live smoke](benchmarks/REASONING-VOICE-SMOKE.md), Standard, Code, and Creator each began with `We need`; this is validation of the integration, not a statistical guarantee.
 
 ### Minimal — Preserve
 
-Iris may index configured metadata, but it does not register `iris_search`, `iris_recommend`, or `iris_activate`; import Providers; mount extensions; call the remote Finder; or change the native Minimal Tool surface.
+Iris adds no control Tool, restriction, Provider import, Finder call, mount, or prompt guidance. The DSH native Minimal presentation remains unchanged at the boundaries Iris can verify. Progressive Minimal is not the 0.1.0 default.
 
-### Standard — Adaptive
+### Standard — Core first
 
-Configured Providers remain dormant. `iris_search` performs direct metadata lookup, while `iris_recommend` ranks up to three Tool, Skill, or connected MCP capabilities for text supplied by the caller. A Tool result routes to `iris_activate`, a Skill result routes to DSH's native `skill` Tool, and an MCP result routes directly to its registered Tool name.
+Standard starts with the Minimal reasoning scaffold, a small native core, and `iris_search`, `iris_recommend`, and `iris_activate`. Filesystem, search, coordination, delegation, Creator, and extension packs remain ready on demand.
 
-### Code — Adaptive + Stable SDK
+### Code — Stable SDK
 
-Only Iris Tool capabilities declaring `ptcCompatible: true` may activate. Native Skills and connected MCP Tools are discoverable only when DSH already exposes their native routes through the Code SDK. Iris controls remain available through that SDK. Tool activation stages the reveal until the next DSH prompt assembly regenerates `tools:sdk`; Iris never patches the SDK itself.
+DSH still presents `run_code` and generates `tools:sdk`; only the persona is shadowed by the Minimal reasoning scaffold. Iris restricts the bindings represented by the current aperture; a PTC-compatible capability discovered in step N is staged and appears only when DSH assembles the SDK for step N+1. Iris never generates or patches SDK code.
 
-### Creator — Adaptive + Create
+### Creator — Control plane on demand
 
-The seven native `cordis_*` inspection, definition, execution, and lifecycle Tools remain pinned alongside `iris_search`, `iris_recommend`, and `iris_activate`. Ordinary Tool capabilities stay progressive. Existing native Skills and connected MCP Tools route back to DSH instead of being mistaken for creation gaps. Local Tool misses use metadata-only discovery, then retain the typed `creator-fallback` result.
+The full Cordis/Creator capability ceiling is preserved. Its core aperture uses the Minimal reasoning scaffold; Creator-specific mutation, inspection, authoring Tools, and trust-critical guidance are disclosed only after high-confidence creator intent or explicit activation, at which point the native Creator persona is restored. Normal Tool, Skill, and MCP routing is tried before `creator-fallback`.
+
+## Unified capability routes
+
+Iris uses kind-qualified identities so names cannot collide:
+
+```text
+tool:text_word_count     → iris_activate → lazy Provider mount
+skill:repo-review        → native skill route → ctx.skills.get()
+mcp:github/create_issue  → registered DSH MCP Tool → direct execution
+```
+
+`iris_search` and `iris_recommend(query)` rank one metadata view across configured Tools, model-invocable DSH Skills, connected MCP Tools, and hidden native DSH capabilities. Search and recommendation never import a Provider, load a Skill body, reconnect MCP, or execute a Tool.
 
 ## Quick start
 
-Install the Bundle into a DSH profile. From a local checkout:
+Install the Bundle into a DSH profile:
 
 ```sh
-dsh plugin --profile web add .
+dsh plugin --profile web add dsh-iris
 ```
 
-Configure `$DSH_HOME/profiles/web/cordis.patch.yml`:
+Configure the Bundle entry in `$DSH_HOME/profiles/web/cordis.patch.yml`:
 
 ```yaml
 - id: dsh-iris
@@ -92,84 +115,77 @@ Configure `$DSH_HOME/profiles/web/cordis.patch.yml`:
       logLevel: info
       providers:
         - id: example.local-text-tools
-          module: /absolute/path/to/dsh-iris/examples/local-text-tools/provider.mjs
+          module: /absolute/path/to/provider.mjs
           capabilities:
             - id: text_word_count
               kind: tool
               description: Count words, characters, and lines in local text.
-              keywords:
-                - count words
-                - text statistics
+              keywords: [count words, text statistics]
               ptcCompatible: true
-      discovery:
-        enabled: true
-        cacheTtlMs: 900000
-        maxResults: 10
 ```
 
-`policy: auto` maps the canonical DSH preset to Preserve, Adaptive, Adaptive Code, or Adaptive Creator. Explicit values are `preserve`, `adaptive`, `adaptive-code`, and `adaptive-creator`.
-
-Start DSH:
+Then start DSH normally:
 
 ```sh
 dsh --profile web
 ```
 
-The bundled example supports the explicit path:
+The example flow is explicit and side-effect free until activation:
 
 ```text
-iris_recommend({ query: "Count the words in this text" })
-→ returns up to three metadata-only recommendations
-→ Provider remains unloaded
-
 iris_search({ query: "count words" })
-→ returns tool:text_word_count metadata and route = iris-activate
-→ Provider remains unloaded
+→ tool:text_word_count metadata
+→ Provider imports: 0
 
 iris_activate({ capabilityId: "tool:text_word_count" })
-→ resolve → lazy import/mount → verify → reveal
+→ resolve → policy → lazy import/mount → verify → reveal
 → Provider applies once
-→ the next normal DSH step sees the Tool
 
 text_word_count({ text: "Iris opens only when needed." })
-→ normal Tool execution
+→ normal DSH approval / guard / execution pipeline
 ```
 
-A Skill follows the other route:
+See [examples/local-text-tools](examples/local-text-tools) for a local Provider.
 
-```text
-iris_search({ query: "review this repository" })
-→ returns skill:repo-review metadata and route = dsh-skill
-→ Skill body remains unloaded
+## Web UI
 
-skill({ name: "repo-review" })
-→ DSH validates modelInvocable
-→ DSH loads and renders the Skill body
+The same package includes a DSH browser client. Open **Settings → Iris** to inspect the Host-owned state for the selected Agent:
+
+- current mode, strategy, status, and capability ceiling;
+- revealed and ready capability packs;
+- visible, ready, and unavailable Tool / Skill / MCP capabilities;
+- visible schema, prompt, and Code SDK sizes when available;
+- recent aperture transitions.
+
+The page is read-only, supports English and Simplified Chinese, and uses the existing DSH Remote and settings extension seams. It does not execute Tools or infer state in the browser. If no Iris Runtime exists for the selected Agent, it says so explicitly. Live mutation events are intentionally deferred; selection changes and manual refresh obtain a fresh authoritative snapshot.
+
+## Performance evidence
+
+The public claims in this README follow [docs/evidence.md](docs/evidence.md):
+
+- **Official fact:** DeepSeek's published V4-Flash Code Agent evaluation used DSH Minimal with a deliberately small Tool environment.
+- **Independent evidence:** harness and Tool-surface choices can materially change Agent results, but their effects are task- and setup-dependent.
+- **Iris hypothesis:** reducing irrelevant schemas and guidance may improve efficiency or reliability while progressive disclosure preserves the full ceiling.
+- **Measured Iris result:** pending a live run; no synthetic value is presented as model performance.
+
+## Reproducible benchmark
+
+`benchmarks/` compares Vanilla DSH and DSH + Iris across Minimal, Standard, Code, and Creator with machine-verifiable core, filesystem, search, coordination, and Creator tasks.
+
+```sh
+# Offline harness/verifier/report smoke
+pnpm benchmark:smoke
+
+# Live paired run (default: 5 repetitions)
+DEEPSEEK_API_KEY=... \
+DSH_BENCH_COMMAND=... \
+DSH_BENCH_ARGS='["..."]' \
+node benchmarks/run.mjs --driver ./benchmarks/drivers/dsh-sdk.mjs --runs 5 --kind live
+
+node benchmarks/generate-report.mjs
 ```
 
-Calling `iris_activate({ capabilityId: "skill:repo-review" })` is also safe: it returns the typed native route without loading the body or mounting anything. The Agent can usually follow the route returned by search directly and skip that extra control call.
-
-An MCP Tool already connected by DSH follows a third route:
-
-```text
-iris_search({ query: "create github issue" })
-→ returns mcp:github/create_issue, status = available
-→ route = dsh-mcp-tool, dshToolName = mcp__github__create_issue
-→ no MCP connection or tools/list occurs
-
-mcp__github__create_issue({ repository: "org/repo", title: "..." })
-→ normal DSH ToolRuntime execution
-```
-
-Iris v0.4 deliberately does not start configured-but-disconnected MCP servers. DSH currently has no public configured-server enumeration service, and its live `serverName` reservation is app-root scoped. Adding an `iris.mcpServers` block would duplicate DSH config ownership, so lazy MCP lifecycle activation remains deferred.
-
-`UNKNOWN_TOOL` remains a fallback Capability Demand source and enters the same activation pipeline. Iris does not replay the failed call, reuse its call ID, bypass approval or guards, or create another Agent loop.
-
-Search and recommendation read metadata only. They never import, apply, or mount a Provider; call `ctx.skills.get()`; reconnect MCP; request `tools/list`; or execute an MCP Tool. Only Tool activation and deterministic Tool recovery can mount Provider code.
-
-## Iris and DSH
-
-DSH continues to own the Agent loop, ToolRuntime, Skill registry and loaders, MCP transport/protocol/client, Cordis scope and mount lifecycle, approval, guards, execution, sessions, Code Mode SDK, and Creator runtime. Iris owns unified metadata discovery, deterministic ranking and routing, configured Tool resolution, lazy Tool activation, and Agent-scoped reveal.
+The runner records model string, date, Harness/Iris versions, configuration, task ID, verifier result, turns, Tool calls, wall time, surface metrics, and provider usage fields when the provider exposes them. The current public model is a rolling `deepseek-v4-pro` alias; Iris does not claim a fixed `V4-Pro-0813` checkpoint unless the provider exposes one. See [benchmarks/REPORT.md](benchmarks/REPORT.md). Until a credentialed run is saved, the report says **Results pending**.
 
 ## Configuration defaults
 
@@ -185,16 +201,13 @@ iris:
     maxResults: 10
 ```
 
-The current community fallback reads public `topic:dsh-plugin` GitHub metadata and never installs or executes a remote candidate. The intended long-term order is a community registry contract first, with the GitHub topic as fallback. Set `GITHUB_TOKEN` when authenticated GitHub rate limits are needed. The cache is process memory only.
+`policy: auto` maps the canonical preset IDs `minimal`, `standard`, `code`, and `cordis` to their native Iris strategies. Explicit policies remain available for controlled experiments.
 
-Developer logs stay at product-event level:
+## Ownership boundary
 
-```text
-[iris] capability demand: tool:text_word_count
-[iris] matched local provider: example.local-text-tools
-[iris] activated for agent <id>: tool:text_word_count
-[iris] discovery: 3 candidates for tool:example_tool
-```
+DSH owns the Agent loop, preset ceiling, ToolRuntime, prompt assembly, Code SDK, Skill loaders, MCP transport, Cordis lifecycle, approval, guards, execution, sessions, and cancellation. Iris owns the metadata catalog, ranking and routing, aperture policy, configured Tool activation, scoped visibility, retry handoff, telemetry snapshot, and read-only UI projection.
+
+Connected MCP capabilities are discoverable and directly routable. Configured-but-disconnected MCP lazy activation remains deferred because current DSH does not expose a clean configured-server enumeration and Agent-owned namespace lifecycle seam. Iris does not create a second MCP config or runtime.
 
 ## Development
 
@@ -207,13 +220,13 @@ pnpm build
 pnpm pack --dry-run
 ```
 
-See [docs/architecture.md](docs/architecture.md), [CONTEXT.md](CONTEXT.md), and [AGENTS.md](AGENTS.md).
+See [docs/architecture.md](docs/architecture.md), [docs/evidence.md](docs/evidence.md), [CHANGELOG.md](CHANGELOG.md), [CONTEXT.md](CONTEXT.md), and [AGENTS.md](AGENTS.md).
 
 ## Current limits
 
-The mutation path supports configured Tool capabilities only. Native Skills and already-connected MCP Tools support discovery and routing while their loading, connection, and execution stay with DSH. Configured-but-disconnected MCP activation, community installation, Creation Bridge execution, proactive task extraction, profile persistence, and UI are not implemented.
+No live V4-Pro result is bundled without a real credentialed run. Configured-but-disconnected MCP activation, community installation, Creation Bridge execution, proactive task extraction, provider sandboxing, and persistent analytics are not part of 0.1.0.
 
-Future work includes an upstream MCP lifecycle seam, a community registry contract consumer, better task-aware recommendations, and evidence-guided adaptation.
+Future work is evidence-led: improve the capability that the benchmark and launch usage identify as the largest real bottleneck.
 
 ## License
 

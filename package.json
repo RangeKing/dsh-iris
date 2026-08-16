@@ -1,9 +1,26 @@
 {
   "name": "dsh-iris",
-  "version": "0.4.0",
-  "description": "Progressive capability routing for DeepSeek Harness.",
+  "version": "0.1.0",
+  "description": "Progressive capability disclosure for DeepSeek Harness.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RangeKing/dsh-iris.git"
+  },
+  "homepage": "https://github.com/RangeKing/dsh-iris#readme",
+  "bugs": {
+    "url": "https://github.com/RangeKing/dsh-iris/issues"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "agent",
+    "progressive-disclosure",
+    "tools",
+    "skills",
+    "mcp"
+  ],
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "exports": {
@@ -11,25 +28,63 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./snapshot": {
+      "types": "./lib/runtime/snapshot.d.ts",
+      "default": "./lib/runtime/snapshot.js"
+    },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "benchmarks",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts",
     "examples",
+    "docs/evidence.md",
+    "docs/architecture.md",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
     }
   },
   "scripts": {
-    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json",
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && pnpm client:build",
+    "client:build": "tsc -p tsconfig.client.json && tsdown --config tsdown.client.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "oxlint --deny-warnings src tests scripts vitest.config.ts",
-    "test": "vitest run"
+    "lint": "oxlint --deny-warnings src tests scripts benchmarks vitest.config.ts",
+    "test": "vitest run",
+    "benchmark:smoke": "node benchmarks/run.mjs --runs 1 --driver ./benchmarks/drivers/synthetic.mjs --kind synthetic && node benchmarks/generate-report.mjs",
+    "smoke:release": "node scripts/release-smoke.mjs ./lib/index.js"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -38,7 +93,8 @@
     "@deepseek-ai/dsh-llm": ">=0.1.0-rc.5 <0.2.0",
     "@deepseek-ai/dsh-skill": ">=0.1.0-rc.5 <0.2.0",
     "@deepseek-ai/dsh-system-prompt": ">=0.1.0-rc.5 <0.2.0",
-    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5 <0.2.0"
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.5 <0.2.0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.5 <0.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis-plugin-loader": {
@@ -49,10 +105,18 @@
     "@deepseek-ai/cordis": "4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "1.0.2",
     "@deepseek-ai/dsh-agent": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-api-remotes": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-locale": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-runtime": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-web-react": "0.1.0-rc.6",
     "@deepseek-ai/dsh-invariants": "0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "0.1.0-rc.6",
     "@deepseek-ai/dsh-mcp-client": "0.1.0-rc.6",
     "@deepseek-ai/dsh-scope": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-sdk-client": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session": "0.1.0-rc.6",
     "@deepseek-ai/dsh-skill": "0.1.0-rc.6",
     "@deepseek-ai/dsh-skill-filesystem": "0.1.0-rc.6",
@@ -61,20 +125,26 @@
     "@deepseek-ai/dsh-timeout": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tool-skill": "0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.0-rc.6",
     "@modelcontextprotocol/sdk": "1.25.3",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.20.0",
+    "@types/react": "18.3.27",
+    "@types/react-dom": "18.3.7",
     "js-yaml": "^4.2.0",
     "oxlint": "1.76.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "tsdown": "^0.22.14",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8",
-    "zod": "4.4.3"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "node": ">=22"
   },
   "packageManager": "pnpm@11.7.0",
   "dependencies": {
-    "@deepseek-ai/schemastery": "3.18.1"
+    "@deepseek-ai/schemastery": "3.18.1",
+    "zod": "4.4.3"
   }
 }

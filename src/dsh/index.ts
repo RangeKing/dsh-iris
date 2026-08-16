@@ -15,7 +15,12 @@ export {
   readAgentPresetIdentity,
   type AgentPresetIdentity,
 } from './preset-identity.js'
-export { DshCapabilitySurface, type DshCapabilitySurfaceOptions } from './capability-surface.js'
+export {
+  DshCapabilitySurface,
+  type DshCapabilitySurfaceOptions,
+  type IrisSurfaceMetrics,
+  type IrisSurfaceTransition,
+} from './capability-surface.js'
 export { installIrisSearch, IRIS_SEARCH_TOOL_NAME } from './iris-search.js'
 export {
   DshSkillCapabilitySource,

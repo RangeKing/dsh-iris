@@ -1,0 +1,102 @@
+{
+  "tasks": [
+    {
+      "id": "core-only-coding",
+      "modes": ["minimal", "standard", "code", "cordis"],
+      "pack": "core",
+      "prompt": "Fix sum.mjs so the existing Node test passes. Use only the shell/editor capabilities already available in the initial core surface.",
+      "fixture": {
+        "files": {
+          "sum.mjs": "export function sum(a, b) {\n  return a - b\n}\n",
+          "sum.test.mjs": "import assert from 'node:assert/strict'\nimport test from 'node:test'\nimport { sum } from './sum.mjs'\n\ntest('adds two values', () => assert.equal(sum(2, 3), 5))\n"
+        }
+      },
+      "syntheticSolution": {
+        "sum.mjs": "export function sum(a, b) {\n  return a + b\n}\n"
+      },
+      "verifier": {
+        "kind": "command",
+        "command": "node",
+        "args": ["--test", "sum.test.mjs"]
+      }
+    },
+    {
+      "id": "repository-filesystem",
+      "modes": ["standard", "code", "cordis"],
+      "pack": "filesystem",
+      "prompt": "Find every source file containing TODO and write the sorted relative paths, one per line, to TODO_FILES.txt. Ignore node_modules and generated output.",
+      "fixture": {
+        "files": {
+          "src/alpha.ts": "// TODO: validate input\nexport const alpha = 1\n",
+          "src/nested/beta.ts": "export const beta = 2 // TODO: remove fixture\n",
+          "src/clean.ts": "export const clean = true\n",
+          "notes.txt": "The word TODO here is documentation, not a source file.\n"
+        }
+      },
+      "syntheticSolution": {
+        "TODO_FILES.txt": "src/alpha.ts\nsrc/nested/beta.ts\n"
+      },
+      "verifier": {
+        "kind": "file-content",
+        "path": "TODO_FILES.txt",
+        "equals": "src/alpha.ts\nsrc/nested/beta.ts\n"
+      }
+    },
+    {
+      "id": "search-required",
+      "modes": ["standard", "code", "cordis"],
+      "pack": "search",
+      "prompt": "Use web research and an official DeepSeek source to identify the current public V4 Pro API model alias. Write ANSWER.json with modelAlias and sourceUrl.",
+      "fixture": { "files": {} },
+      "syntheticSolution": {
+        "ANSWER.json": "{\"modelAlias\":\"deepseek-v4-pro\",\"sourceUrl\":\"https://api-docs.deepseek.com/updates/\"}\n"
+      },
+      "verifier": {
+        "kind": "json-file",
+        "path": "ANSWER.json",
+        "equals": {
+          "modelAlias": "deepseek-v4-pro",
+          "sourceUrl": "https://api-docs.deepseek.com/updates/"
+        }
+      }
+    },
+    {
+      "id": "coordination-delegation",
+      "modes": ["standard", "code", "cordis"],
+      "pack": "delegation",
+      "prompt": "Repair both independent modules so all Node tests pass. You may coordinate or delegate the independent repairs when the current mode provides that pack.",
+      "fixture": {
+        "files": {
+          "alpha.mjs": "export const normalize = value => value.trim().toLowercase()\n",
+          "alpha.test.mjs": "import assert from 'node:assert/strict'\nimport test from 'node:test'\nimport { normalize } from './alpha.mjs'\n\ntest('normalizes text', () => assert.equal(normalize(' Iris '), 'iris'))\n",
+          "beta.mjs": "export const double = value => value + 2\n",
+          "beta.test.mjs": "import assert from 'node:assert/strict'\nimport test from 'node:test'\nimport { double } from './beta.mjs'\n\ntest('doubles numbers', () => assert.equal(double(7), 14))\n"
+        }
+      },
+      "syntheticSolution": {
+        "alpha.mjs": "export const normalize = value => value.trim().toLowerCase()\n",
+        "beta.mjs": "export const double = value => value * 2\n"
+      },
+      "verifier": {
+        "kind": "command",
+        "command": "node",
+        "args": ["--test", "alpha.test.mjs", "beta.test.mjs"]
+      }
+    },
+    {
+      "id": "creator-plugin",
+      "modes": ["cordis"],
+      "pack": "creator",
+      "prompt": "Create a minimal out-of-tree DSH Bundle named dsh-benchmark-plugin. Export plugin.mjs, point dsh.bundle.patch to cordis.patch.yml, and register a Tool named bench_fixture_echo.",
+      "fixture": { "files": {} },
+      "syntheticSolution": {
+        "package.json": "{\"name\":\"dsh-benchmark-plugin\",\"type\":\"module\",\"exports\":{\".\":\"./plugin.mjs\"},\"dsh\":{\"bundle\":{\"patch\":\"./cordis.patch.yml\"}}}\n",
+        "cordis.patch.yml": "- $apply: ./plugin.mjs\n",
+        "plugin.mjs": "export function apply(ctx) {\n  ctx.tools.register('bench_fixture_echo', {\n    description: 'Echo benchmark input',\n    inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },\n    execute: ({ text }) => ({ text }),\n  })\n}\n"
+      },
+      "verifier": {
+        "kind": "dsh-plugin"
+      }
+    }
+  ]
+}

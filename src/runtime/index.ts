@@ -4,3 +4,4 @@ export {
   type IrisRuntimeOptions,
   type IrisRuntimeOutcome,
 } from './iris-runtime.js'
+export type * from './snapshot.js'

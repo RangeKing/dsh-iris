@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  capabilityPackForTool,
   CapabilityRanker,
   CapabilitySurfaceState,
   searchCapabilityCatalog,
@@ -91,6 +92,7 @@ describe('Capability Surface state', () => {
       visible: ['tool:iris_search'],
       pinned: ['tool:iris_search'],
       staged: ['tool:text_word_count'],
+      revealedPacks: [],
     })
 
     surface.commitStaged()
@@ -99,13 +101,29 @@ describe('Capability Surface state', () => {
   })
 })
 
+describe('Capability packs', () => {
+  it.each([
+    ['bash', 'core'],
+    ['read', 'core'],
+    ['write', 'filesystem'],
+    ['grep', 'filesystem'],
+    ['web_search', 'search'],
+    ['job_output', 'coordination'],
+    ['subagent', 'delegation'],
+    ['cordis_define', 'creator'],
+    ['mcp__github__create_issue', 'extensions'],
+  ] as const)('maps %s to the stable %s pack', (toolName, pack) => {
+    expect(capabilityPackForTool(toolName)).toBe(pack)
+  })
+})
+
 describe('Iris aperture policies', () => {
-  it.each<[string, IrisModePolicyId, boolean, boolean, string]>([
-    ['minimal', 'preserve', false, false, 'disabled'],
-    ['standard', 'adaptive', true, true, 'between-steps'],
-    ['code', 'adaptive-code', true, true, 'between-steps'],
-    ['cordis', 'adaptive-creator', true, true, 'between-steps'],
-  ])('maps %s to %s', (preset, expected, search, discovery, timing) => {
+  it.each<[string, IrisModePolicyId, boolean, boolean, string, string]>([
+    ['minimal', 'preserve', false, false, 'disabled', 'native'],
+    ['standard', 'adaptive', true, true, 'between-steps', 'minimal'],
+    ['code', 'adaptive-code', true, true, 'between-steps', 'minimal'],
+    ['cordis', 'adaptive-creator', true, true, 'between-steps', 'minimal'],
+  ])('maps %s to %s', (preset, expected, search, discovery, timing, reasoningScaffold) => {
     const policy = selectIrisModePolicy({
       id: preset,
       builtinKind: preset === 'code'
@@ -119,6 +137,7 @@ describe('Iris aperture policies', () => {
     expect(policy.search).toBe(search)
     expect(policy.remoteDiscovery === 'metadata-only').toBe(discovery)
     expect(policy.activationTiming).toBe(timing)
+    expect(policy.reasoningScaffold).toBe(reasoningScaffold)
   })
 
   it('allows only proven PTC-compatible activation in Code Mode', () => {

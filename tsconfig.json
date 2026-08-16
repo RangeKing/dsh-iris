@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
@@ -12,8 +12,8 @@
     "declarationMap": true,
     "sourceMap": true,
     "skipLibCheck": true,
+    "jsx": "react-jsx",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "benchmarks/**/*.mjs", "vitest.config.ts", "tsdown.client.config.ts"]
 }
-

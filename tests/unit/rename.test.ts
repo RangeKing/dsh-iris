@@ -18,8 +18,8 @@ describe('dsh-iris public identity', () => {
 
     expect(pkg).toMatchObject({
       name: 'dsh-iris',
-      version: '0.4.0',
-      description: 'Progressive capability routing for DeepSeek Harness.',
+      version: '0.1.0',
+      description: 'Progressive capability disclosure for DeepSeek Harness.',
     })
     expect(irisPlugin.name).toBe('dsh-iris')
     expect(resolveConfig()).toMatchObject({

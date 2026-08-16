@@ -33,6 +33,21 @@ const providerModule = new URL('../fixtures/providers/iris-fixture-echo.mjs', im
 const upperProviderModule = new URL('../fixtures/providers/iris-fixture-upper.mjs', import.meta.url).href
 const exampleProviderModule = new URL('../../examples/local-text-tools/provider.mjs', import.meta.url).href
 
+function registerNativeTools(ctx: Context, names: readonly string[]): void {
+  for (const name of names) {
+    ctx.tools.register(defineTool({
+      name,
+      description: `${name} native preset Tool`,
+      parameters: {},
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      execute: () => Promise.resolve(name),
+    }))
+  }
+}
+
 function localConfig(policy: ConfiguredPolicy = 'auto'): Config {
   return {
     iris: {
@@ -97,18 +112,7 @@ async function publishAgent(
       scope = createScope(inner, draft)
       agent = Object.assign(draft, { ctx: scope.ctx }) as unknown as ProductAgent
       Object.defineProperty(scope.ctx, 'agent', { value: agent })
-      for (const name of nativeTools) {
-        scope.ctx.tools.register(defineTool({
-          name,
-          description: `${name} native preset Tool`,
-          parameters: {},
-          output: {
-            schema: { type: 'string' },
-            render: (_args, value) => [{ type: 'text', text: value }],
-          },
-          execute: () => Promise.resolve(name),
-        }))
-      }
+      registerNativeTools(scope.ctx, nativeTools)
       scope.ctx.effect(() => inner.agents.register(agent), 'product-test.agent()')
     },
     { inject: ['agents', 'tools', 'systemPrompt'] },
@@ -599,7 +603,7 @@ describe('dsh-iris v0.1 Bundle product path', () => {
     await ctx.fiber.dispose()
   })
 
-  it('pins Creator control-plane Tools while work Providers stay catalogued', async () => {
+  it('starts Creator on core controls and reveals its native creator pack on explicit intent', async () => {
     fixture.fixtureState.reset()
     const ctx = await harness(localConfig())
     const creatorControlPlane = [
@@ -611,30 +615,30 @@ describe('dsh-iris v0.1 Bundle product path', () => {
       'cordis_stop',
       'cordis_undefine',
     ]
-    const owner = await publishAgent(ctx, 'cordis', 'creator-control', creatorControlPlane)
+    registerNativeTools(ctx, creatorControlPlane)
+    const owner = await publishAgent(ctx, 'cordis', 'creator-control')
     const runtime = await runtimeFor(ctx, owner.agent)
 
     expect(runtime.modePolicy.id).toBe('adaptive-creator')
     expect(ctx.tools.get('iris_activate', owner.agent)).toBeDefined()
     expect(ctx.tools.get('iris_recommend', owner.agent)).toBeDefined()
     expect(runtime.surface.snapshot().pinned).toEqual([
-      'tool:cordis_define',
-      'tool:cordis_inspect_list',
-      'tool:cordis_inspect_query',
-      'tool:cordis_inspect_self',
-      'tool:cordis_run',
-      'tool:cordis_stop',
-      'tool:cordis_undefine',
       'tool:iris_activate',
       'tool:iris_recommend',
       'tool:iris_search',
     ])
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeUndefined()
+    await expect(runtime.activate('tool:cordis_define', new AbortController().signal))
+      .resolves.toMatchObject({ status: 'capability-ready', readiness: 'immediate' })
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeDefined()
+    expect(ctx.tools.get('cordis_inspect_list', owner.agent)).toBeDefined()
+    expect(runtime.surface.snapshot().revealedPacks).toEqual(['core', 'creator'])
     expect(ctx.tools.get(fixture.toolName, owner.agent)).toBeUndefined()
     expect(fixture.fixtureState.applies).toBe(0)
     await ctx.fiber.dispose()
   })
 
-  it('explicitly activates a local Creator data-plane Tool without unpinning its control plane', async () => {
+  it('explicitly activates a local Creator data-plane Tool while creator-native Tools stay hidden', async () => {
     fixture.fixtureState.reset()
     const ctx = await harness(localConfig())
     const creatorControlPlane = [
@@ -646,7 +650,8 @@ describe('dsh-iris v0.1 Bundle product path', () => {
       'cordis_stop',
       'cordis_undefine',
     ]
-    const owner = await publishAgent(ctx, 'cordis', 'creator-explicit', creatorControlPlane)
+    registerNativeTools(ctx, creatorControlPlane)
+    const owner = await publishAgent(ctx, 'cordis', 'creator-explicit')
     const runtime = await runtimeFor(ctx, owner.agent)
 
     const result = await activateCapability(ctx, owner.agent, undefined, 'creator-explicit-activate')
@@ -657,13 +662,12 @@ describe('dsh-iris v0.1 Bundle product path', () => {
     })
     expect(fixture.fixtureState.applies).toBe(1)
     expect(ctx.tools.get(fixture.toolName, owner.agent)).toBeDefined()
-    expect(runtime.surface.snapshot().pinned).toEqual(expect.arrayContaining([
-      'tool:cordis_define',
-      'tool:cordis_inspect_list',
+    expect(runtime.surface.snapshot().pinned).toEqual([
       'tool:iris_activate',
       'tool:iris_recommend',
       'tool:iris_search',
-    ]))
+    ])
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeUndefined()
     await ctx.fiber.dispose()
   })
 
@@ -695,6 +699,39 @@ describe('dsh-iris v0.1 Bundle product path', () => {
     expect(fixture.fixtureState.applies).toBe(1)
     expect(upperFixture.fixtureState.applies).toBe(0)
     expect(ctx.tools.get(upperFixture.toolName, owner.agent)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('projects an Agent-scoped telemetry snapshot without adding model context', async () => {
+    const ctx = await harness(localConfig())
+    registerNativeTools(ctx, ['bash', 'read', 'write', 'web_search'])
+    const owner = await publishAgent(ctx, 'standard', 'telemetry-standard')
+    const runtime = await runtimeFor(ctx, owner.agent)
+    await ctx.systemPrompt.assemble({ scope: owner.agent })
+
+    const initial = await runtime.snapshot()
+    expect(initial).toMatchObject({
+      enabled: true,
+      mode: 'standard',
+      strategy: 'adaptive',
+      revealedPacks: ['core'],
+      visibleToolCount: 5,
+    })
+    expect(initial.visibleSchemaChars).toBeGreaterThan(0)
+    expect(initial.promptChars).toBeGreaterThan(0)
+    expect(initial.capabilities.find(capability => capability.id === 'tool:web_search'))
+      .toMatchObject({ pack: 'search', status: 'ready' })
+
+    await expect(runtime.activate('tool:web_search', new AbortController().signal))
+      .resolves.toMatchObject({ status: 'capability-ready' })
+    const expanded = await runtime.snapshot()
+    expect(expanded.revealedPacks).toEqual(['core', 'search'])
+    expect(expanded.transitions).toEqual([{
+      sequence: 1,
+      pack: 'search',
+      reason: 'explicit-activation',
+    }])
+    expect(expanded.visibleToolCount).toBe(6)
     await ctx.fiber.dispose()
   })
 

@@ -5,6 +5,7 @@ import type { ResolvedIrisConfig } from '../config.js'
 import { GitHubPluginFinder } from '../discovery/index.js'
 import { ConfiguredLocalProviderCatalog } from '../providers/index.js'
 import { IrisRuntime } from './iris-runtime.js'
+import type { IrisWebSnapshot } from './snapshot.js'
 
 type OwnerCleanup = () => void | Promise<void>
 
@@ -23,8 +24,10 @@ export class IrisBundle {
   private readonly cleanups = new Map<Agent, OwnerCleanup>()
   private stopCreated: (() => void) | undefined
   private stopping = false
+  private readonly ctx: Context
 
-  constructor(private readonly ctx: Context, private readonly config: ResolvedIrisConfig) {
+  constructor(ctx: Context, private readonly config: ResolvedIrisConfig) {
+    this.ctx = ctx
     this.catalog = new ConfiguredLocalProviderCatalog(config.providers)
     this.finder = config.discovery.enabled
       ? new GitHubPluginFinder({
@@ -42,6 +45,18 @@ export class IrisBundle {
 
   runtimeFor(agent: Agent): IrisRuntime | undefined {
     return this.runtimes.get(agent)
+  }
+
+  async snapshot(agentId?: string, signal?: AbortSignal): Promise<IrisWebSnapshot> {
+    const runtime = agentId === undefined
+      ? [...this.runtimes.values()].at(-1)
+      : [...this.runtimes.entries()].find(([agent]) => agent.id === agentId)?.[1]
+    if (runtime === undefined) return { enabled: false, reason: 'no-active-agent' }
+    try {
+      return await runtime.snapshot(signal)
+    } catch {
+      return { enabled: false, reason: 'runtime-not-ready' }
+    }
   }
 
   async dispose(): Promise<void> {

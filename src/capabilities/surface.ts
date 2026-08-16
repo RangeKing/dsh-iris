@@ -1,4 +1,5 @@
 import type { CapabilityDescriptor, CapabilityId } from '../domain/index.js'
+import { compareCapabilityPacks, type CapabilityPackId } from './packs.js'
 
 export interface CapabilitySurfaceSnapshot {
   readonly catalogued: readonly CapabilityId[]
@@ -6,6 +7,7 @@ export interface CapabilitySurfaceSnapshot {
   readonly visible: readonly CapabilityId[]
   readonly pinned: readonly CapabilityId[]
   readonly staged: readonly CapabilityId[]
+  readonly revealedPacks: readonly CapabilityPackId[]
 }
 
 function ordered(values: ReadonlySet<CapabilityId>): readonly CapabilityId[] {
@@ -19,9 +21,14 @@ export class CapabilitySurfaceState {
   private readonly visible = new Set<CapabilityId>()
   private readonly pinned = new Set<CapabilityId>()
   private readonly staged = new Set<CapabilityId>()
+  private readonly revealedPacks = new Set<CapabilityPackId>()
 
   constructor(catalog: readonly CapabilityDescriptor[]) {
     for (const capability of catalog) this.catalogued.add(capability.id)
+  }
+
+  catalogue(id: CapabilityId): void {
+    this.catalogued.add(id)
   }
 
   activate(id: CapabilityId): void {
@@ -52,6 +59,10 @@ export class CapabilitySurfaceState {
     this.visible.add(id)
   }
 
+  revealPack(pack: CapabilityPackId): void {
+    this.revealedPacks.add(pack)
+  }
+
   snapshot(): CapabilitySurfaceSnapshot {
     return {
       catalogued: ordered(this.catalogued),
@@ -59,6 +70,7 @@ export class CapabilitySurfaceState {
       visible: ordered(this.visible),
       pinned: ordered(this.pinned),
       staged: ordered(this.staged),
+      revealedPacks: [...this.revealedPacks].sort(compareCapabilityPacks),
     }
   }
 }

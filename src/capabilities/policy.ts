@@ -8,7 +8,8 @@ export type ConfiguredIrisModePolicy = 'auto' | IrisModePolicyId
 export interface IrisModePolicy {
   readonly id: IrisModePolicyId
   readonly resolutionPolicy: IrisPolicyId
-  readonly initialSurface: 'preserve-native' | 'native-plus-search' | 'creator-control-plane-plus-search'
+  readonly reasoningScaffold: 'native' | 'minimal'
+  readonly initialSurface: 'preserve-native' | 'core-plus-iris-controls'
   readonly search: boolean
   readonly activationTiming: 'disabled' | 'between-steps'
   readonly visibilityCommit: 'immediate' | 'next-assembly'
@@ -21,9 +22,10 @@ export interface IrisModePolicy {
 }
 
 function trustedLocalTool(capability: CapabilityDescriptor): boolean {
-  return capability.kind === 'tool'
-    && capability.source === 'local'
-    && (capability.trust === 'trusted' || capability.trust === 'builtin')
+  return capability.kind === 'tool' && (
+    (capability.source === 'local' && capability.trust === 'trusted')
+    || (capability.source === 'builtin' && capability.trust === 'builtin')
+  )
 }
 
 function irisControl(capability: CapabilityDescriptor): boolean {
@@ -36,6 +38,7 @@ const POLICIES: Readonly<Record<IrisModePolicyId, IrisModePolicy>> = {
   preserve: {
     id: 'preserve',
     resolutionPolicy: 'observe',
+    reasoningScaffold: 'native',
     initialSurface: 'preserve-native',
     search: false,
     activationTiming: 'disabled',
@@ -50,7 +53,8 @@ const POLICIES: Readonly<Record<IrisModePolicyId, IrisModePolicy>> = {
   adaptive: {
     id: 'adaptive',
     resolutionPolicy: 'resolve',
-    initialSurface: 'native-plus-search',
+    reasoningScaffold: 'minimal',
+    initialSurface: 'core-plus-iris-controls',
     search: true,
     activationTiming: 'between-steps',
     visibilityCommit: 'immediate',
@@ -64,7 +68,8 @@ const POLICIES: Readonly<Record<IrisModePolicyId, IrisModePolicy>> = {
   'adaptive-code': {
     id: 'adaptive-code',
     resolutionPolicy: 'compose',
-    initialSurface: 'native-plus-search',
+    reasoningScaffold: 'minimal',
+    initialSurface: 'core-plus-iris-controls',
     search: true,
     activationTiming: 'between-steps',
     visibilityCommit: 'next-assembly',
@@ -78,7 +83,8 @@ const POLICIES: Readonly<Record<IrisModePolicyId, IrisModePolicy>> = {
   'adaptive-creator': {
     id: 'adaptive-creator',
     resolutionPolicy: 'evolve',
-    initialSurface: 'creator-control-plane-plus-search',
+    reasoningScaffold: 'minimal',
+    initialSurface: 'core-plus-iris-controls',
     search: true,
     activationTiming: 'between-steps',
     visibilityCommit: 'immediate',
@@ -87,7 +93,7 @@ const POLICIES: Readonly<Record<IrisModePolicyId, IrisModePolicy>> = {
     requirePtcCompatibility: false,
     canActivate: trustedLocalTool,
     canReveal: trustedLocalTool,
-    isPinned: capability => irisControl(capability) || capability.name.startsWith('cordis_'),
+    isPinned: irisControl,
   },
 }
 

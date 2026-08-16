@@ -6,6 +6,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["tests", "vitest.config.ts"]
+  "exclude": ["src/client", "tests", "vitest.config.ts"]
 }
-

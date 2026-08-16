@@ -10,6 +10,8 @@ import type {
 import {
   demandFromExplicitActivation,
   demandFromUnknownTool,
+  CAPABILITY_PACK_ORDER,
+  capabilityPackForTool,
   searchCapabilityCatalog,
   selectIrisModePolicy,
   routeCapability,
@@ -28,6 +30,7 @@ import {
   evaluateIrisFailure,
   evaluateIrisRequirement,
   readAgentPresetIdentity,
+  type AgentPresetIdentity,
   type IrisActivationControlResult,
   type IrisDryRunEvaluation,
   type IrisEvaluation,
@@ -42,6 +45,7 @@ import {
   observeUnknownTool,
   type CapabilityFailureSignal,
 } from '../sensing/index.js'
+import type { IrisSessionSnapshot } from './snapshot.js'
 
 export type IrisRuntimeOutcome =
   | { readonly status: 'not-applicable' }
@@ -135,6 +139,7 @@ export class IrisRuntime {
   private disposal: Promise<void> | undefined
   private outcome: IrisRuntimeOutcome | undefined
   private modeValue: IrisModePolicy | undefined
+  private presetValue: AgentPresetIdentity | undefined
   private surfaceValue: DshCapabilitySurface | undefined
   private runtimeCtx: Context | undefined
   private readonly recommendedQueries = new Set<string>()
@@ -198,7 +203,7 @@ export class IrisRuntime {
     this.rememberRecommendation(fingerprint)
     return {
       deduplicated: false,
-      results: searchCapabilityCatalog(
+      results: this.projectDiscoveryRoutes(searchCapabilityCatalog(
         await this.discoveryCapabilities(signal),
         {
           query,
@@ -206,7 +211,74 @@ export class IrisRuntime {
           requirePtcCompatible: this.modePolicy.requirePtcCompatibility,
           limit: IRIS_RECOMMENDATION_LIMIT,
         },
-      ),
+      )),
+    }
+  }
+
+  async snapshot(signal?: AbortSignal): Promise<IrisSessionSnapshot> {
+    await this.ready
+    const capabilities = [
+      ...await this.discoveryCapabilities(signal),
+      ...this.surface.capabilities(),
+    ]
+    const unique = new Map(capabilities.map(capability => [capability.id, capability]))
+    const surface = this.surface.snapshot()
+    const visible = new Set(surface.visible)
+    const staged = new Set(surface.staged)
+    const capabilityViews = [...unique.values()]
+      .map(capability => ({
+        id: capability.id,
+        name: capability.name,
+        kind: capability.kind,
+        pack: capability.provenance?.kind === 'dsh-runtime'
+          ? capabilityPackForTool(capability.name)
+          : capability.provenance?.kind === 'iris-control'
+            ? 'core' as const
+            : 'extensions' as const,
+        status: visible.has(capability.id)
+          ? 'visible' as const
+          : staged.has(capability.id)
+            ? 'staged' as const
+            : 'ready' as const,
+        origin: capability.provenance?.kind ?? capability.source,
+        ...capability.description === undefined ? {} : { description: capability.description },
+        route: routeCapability(capability),
+      }))
+      .sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+    const metrics = this.surface.metrics()
+    const packViews = CAPABILITY_PACK_ORDER.map((id) => {
+      const members = capabilityViews.filter(capability => capability.pack === id)
+      const availableCount = members.length
+      const visibleCount = members.filter(capability => capability.status === 'visible').length
+      return {
+        id,
+        status: surface.revealedPacks.includes(id)
+          ? 'revealed' as const
+          : availableCount > 0 ? 'ready' as const : 'unavailable' as const,
+        visibleCount,
+        availableCount,
+      }
+    })
+    const visibleToolCount = metrics.visibleToolCount
+    return {
+      enabled: true,
+      agentId: this.agent.id,
+      mode: this.presetValue?.id ?? 'unknown',
+      strategy: this.modePolicy.id,
+      ceiling: {
+        availableCapabilityCount: capabilityViews.length,
+        nativeToolCount: metrics.nativeToolCount,
+      },
+      revealedPacks: surface.revealedPacks,
+      packs: packViews,
+      capabilities: capabilityViews,
+      visibleToolCount,
+      availableCapabilityCount: capabilityViews.length,
+      hiddenCapabilityCount: capabilityViews.length - visibleToolCount,
+      visibleSchemaChars: metrics.visibleSchemaChars,
+      ...metrics.promptChars === undefined ? {} : { promptChars: metrics.promptChars },
+      ...metrics.codeSdkChars === undefined ? {} : { codeSdkChars: metrics.codeSdkChars },
+      transitions: this.surface.transitions(),
     }
   }
 
@@ -214,10 +286,10 @@ export class IrisRuntime {
     demand: Extract<CapabilityDemand, { kind: 'search' }>,
     signal?: AbortSignal,
   ): Promise<readonly CapabilitySearchResult[]> {
-    return this.discoveryCapabilities(signal).then(catalog => searchCapabilityCatalog(
+    return this.discoveryCapabilities(signal).then(catalog => this.projectDiscoveryRoutes(searchCapabilityCatalog(
       catalog,
       { query: demand.query, ...demand.capabilityKind === undefined ? {} : { kind: demand.capabilityKind } },
-    ))
+    )))
   }
 
   async evaluate(demand: Extract<CapabilityDemand, { kind: 'unknown-tool' }>): Promise<IrisDryRunEvaluation> {
@@ -297,12 +369,28 @@ export class IrisRuntime {
     }
     const requirement = demand.requirement
     this.info(`capability demand: ${requirement.id}`)
+    const nativeCandidate = requirement.kind === 'tool'
+      ? this.surface.nativeCandidate(requirement.id)
+      : undefined
+    const catalog = [
+      ...this.catalog.find(requirement),
+      ...nativeCandidate === undefined ? [] : [{
+        capability: nativeCandidate,
+        availability: 'local' as const,
+        evidence: [{ source: 'catalog' as const, detail: 'DSH preset capability ceiling' }],
+      }],
+    ]
     const evaluation = demand.kind === 'unknown-tool'
-      ? await this.evaluate(demand)
+      ? await evaluateIrisFailure({
+        agentCtx: this.runtimeCtx ?? this.agentCtx,
+        signal: demand.signal,
+        catalog,
+        config: { policy: this.modePolicy.resolutionPolicy },
+      })
       : await evaluateIrisRequirement({
         agentCtx: this.runtimeCtx ?? this.agentCtx,
         requirement,
-        catalog: this.catalog.find(requirement),
+        catalog,
         config: { policy: this.modePolicy.resolutionPolicy },
       })
     this.debug(`policy ${this.modePolicy.id}: ${evaluation.decision.action}`)
@@ -311,6 +399,10 @@ export class IrisRuntime {
       if (!this.modePolicy.search) return this.record({ status: 'evaluated', evaluation })
       const skill = await this.skillSource.find(requirement.id, cancellation)
       if (skill === undefined) return this.record({ status: 'not-found', evaluation })
+      if (!this.toolVisible('skill')
+        && !this.surface.revealNative('tool:skill', 'explicit-activation')) {
+        return this.record({ status: 'blocked', evaluation, reason: 'native-skill-route-reveal-failed' })
+      }
       const route = routeCapability(skill)
       if (route.kind !== 'dsh-skill') {
         return this.record({ status: 'blocked', evaluation, reason: 'invalid-skill-route' })
@@ -326,7 +418,13 @@ export class IrisRuntime {
     if (demand.kind === 'explicit-activation' && requirement.kind === 'mcp') {
       if (!this.modePolicy.search) return this.record({ status: 'evaluated', evaluation })
       const capability = this.mcpSource.find(requirement.id)
+        ?? this.surface.nativeCandidate(requirement.id)
       if (capability === undefined) return this.record({ status: 'not-found', evaluation })
+      const mcpToolName = capability.provenance?.reference
+      if ((mcpToolName === undefined || !this.toolVisible(mcpToolName))
+        && !this.surface.revealNative(capability.id, 'explicit-activation')) {
+        return this.record({ status: 'blocked', evaluation, reason: 'native-mcp-route-reveal-failed' })
+      }
       const route = routeCapability(capability)
       if (route.kind !== 'dsh-mcp-tool') {
         return this.record({ status: 'blocked', evaluation, reason: 'invalid-mcp-route' })
@@ -350,6 +448,37 @@ export class IrisRuntime {
       const candidate = evaluation.decision.candidate
       if (!this.modePolicy.canActivate(candidate.capability)) {
         return this.record({ status: 'evaluated', evaluation })
+      }
+      if (candidate.capability.provenance?.kind === 'dsh-runtime') {
+        const reason = demand.kind === 'unknown-tool' ? 'unknown-tool' : 'explicit-activation'
+        if (!this.surface.revealNative(candidate.capability.id, reason)) {
+          return this.record({ status: 'blocked', evaluation, reason: 'native-reveal-verification-failed' })
+        }
+        const readiness: 'immediate' | 'next-step' = this.modePolicy.visibilityCommit === 'next-assembly'
+          ? 'next-step'
+          : 'immediate'
+        const handoff = demand.kind === 'unknown-tool'
+          ? {
+            status: 'capability-ready' as const,
+            capabilityId: requirement.id,
+            requestedToolName: requirement.requestedName ?? requirement.id,
+            originalFailure: {
+              callId: demand.signal.evidence.callId,
+              errorName: demand.signal.evidence.errorName,
+              errorCode: demand.signal.evidence.errorCode,
+            },
+            owner: { agentIdentity: this.agent, agentId: this.agent.id },
+            readiness,
+          }
+          : undefined
+        return this.record({
+          status: 'capability-ready',
+          evaluation,
+          capabilityId: requirement.id,
+          requestedToolName: requirement.requestedName ?? requirement.id,
+          readiness,
+          ...handoff === undefined ? {} : { handoff },
+        })
       }
       this.info(`matched local provider: ${candidate.capability.providerId ?? 'unknown'}`)
       let provider
@@ -469,6 +598,7 @@ export class IrisRuntime {
     signal.throwIfAborted()
     const preset = await readAgentPresetIdentity(this.agentCtx)
     signal.throwIfAborted()
+    this.presetValue = preset
     this.modeValue = selectIrisModePolicy(preset, { policy: this.configuredPolicy })
     const fiber = this.agentCtx.plugin(Object.assign((ctx: Context) => {
       this.runtimeCtx = ctx
@@ -542,7 +672,31 @@ export class IrisRuntime {
       .filter(capability => capability.kind === 'tool')
     const skills = await this.skillSource.list(signal)
     const mcp = this.mcpSource.list()
-    return [...tools, ...skills, ...mcp]
+    const native = this.surface.nativeCapabilities()
+    return [...new Map([...native, ...tools, ...skills, ...mcp]
+      .map(capability => [capability.id, capability])).values()]
+  }
+
+  /** Hidden native Skill/MCP routes first disclose their pack through iris_activate. */
+  private projectDiscoveryRoutes(
+    results: readonly CapabilitySearchResult[],
+  ): readonly CapabilitySearchResult[] {
+    return results.map((result) => {
+      const hiddenSkill = result.capability.kind === 'skill' && !this.toolVisible('skill')
+      const mcpToolName = result.capability.provenance?.reference
+      const hiddenMcp = result.capability.kind === 'mcp'
+        && (mcpToolName === undefined || !this.toolVisible(mcpToolName))
+      if (!hiddenSkill && !hiddenMcp) return result
+      return {
+        ...result,
+        status: 'catalogued' as const,
+        route: { kind: 'iris-activate' as const, capabilityId: result.capability.id },
+      }
+    })
+  }
+
+  private toolVisible(name: string): boolean {
+    return (this.runtimeCtx ?? this.agentCtx).tools.get(name, this.agent) !== undefined
   }
 
   private rememberRecommendation(fingerprint: string): void {

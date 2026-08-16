@@ -15,6 +15,7 @@ coverage/
 .turbo/
 .tmp/
 .scratch/
+.playwright-cli/
 tmp/
 temp/
 *.pid
@@ -26,6 +27,7 @@ pnpm-debug.log*
 yarn-debug.log*
 
 # Local configuration and credentials
+docs/
 .env
 .env.*
 !.env.example
@@ -46,7 +48,6 @@ yarn-debug.log*
 
 # Locally generated package archives
 *.tgz
-/docs
 AGENTS.md
 CONTEXT.md
 GLOSSARY.md
