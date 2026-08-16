@@ -33,7 +33,12 @@ export type CapabilityTrust = 'builtin' | 'trusted' | 'known' | 'unknown'
 
 /** Metadata origin retained without loading or executing provider code. */
 export interface CapabilityProvenance {
-  readonly kind: 'configured-local' | 'dsh-runtime' | 'community-metadata'
+  readonly kind:
+    | 'configured-local'
+    | 'dsh-runtime'
+    | 'dsh-native-skill'
+    | 'community-metadata'
+    | 'iris-control'
   readonly reference?: string
 }
 
@@ -43,6 +48,8 @@ export interface CapabilityDescriptor {
   readonly kind: CapabilityKind
   readonly name: string
   readonly description?: string
+  /** Native routing guidance such as DSH SkillSummary.whenToUse. */
+  readonly whenToUse?: string
   readonly keywords?: readonly string[]
   readonly source: CapabilitySource
   readonly trust: CapabilityTrust

@@ -24,12 +24,19 @@ import { installIrisSearch, IRIS_SEARCH_TOOL_NAME } from './iris-search.js'
 
 export interface DshCapabilitySurfaceOptions {
   readonly inheritedAllow?: readonly string[]
-  readonly search?: (query: string, kind?: 'tool' | 'skill') => readonly CapabilitySearchResult[]
+  readonly search?: (
+    query: string,
+    kind?: 'tool' | 'skill',
+    signal?: AbortSignal,
+  ) => Promise<readonly CapabilitySearchResult[]> | readonly CapabilitySearchResult[]
   readonly activate?: (
     capabilityId: string,
     signal: AbortSignal,
   ) => Promise<IrisActivationControlResult>
-  readonly recommend?: (query: string) => IrisRecommendationControlResult
+  readonly recommend?: (
+    query: string,
+    signal?: AbortSignal,
+  ) => Promise<IrisRecommendationControlResult> | IrisRecommendationControlResult
 }
 
 function toolDescriptor(name: string): CapabilityDescriptor {
@@ -40,6 +47,13 @@ function toolDescriptor(name: string): CapabilityDescriptor {
     source: 'installed',
     trust: 'known',
     provenance: { kind: 'dsh-runtime' },
+  }
+}
+
+function irisControlDescriptor(name: string): CapabilityDescriptor {
+  return {
+    ...toolDescriptor(name),
+    provenance: { kind: 'iris-control' },
   }
 }
 
@@ -145,7 +159,7 @@ export class DshCapabilitySurface {
   }
 
   private pinControlTool(name: string): void {
-    const descriptor = toolDescriptor(name)
+    const descriptor = irisControlDescriptor(name)
     this.descriptors.set(descriptor.id, descriptor)
     this.state.activate(descriptor.id)
     this.state.pin(descriptor.id)

@@ -41,6 +41,7 @@ describe('Capability Catalog search', () => {
       capability: wordCount,
       score: 90,
       reasons: ['exact keyword'],
+      route: { kind: 'iris-activate', capabilityId: 'tool:text_word_count' },
     }])
   })
 

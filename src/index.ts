@@ -4,7 +4,7 @@ import { Config, resolveConfig, type Config as BundleConfig } from './config.js'
 import { IrisBundle } from './runtime/index.js'
 
 export const name = 'dsh-iris'
-export const inject = ['agents', 'tools', 'systemPrompt']
+export const inject = ['agents', 'tools', 'skills', 'systemPrompt']
 export { Config }
 
 /**

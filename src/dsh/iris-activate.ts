@@ -3,6 +3,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
+import type { CapabilityRoute } from '../capabilities/index.js'
+
 export const IRIS_ACTIVATE_TOOL_NAME = 'iris_activate'
 
 export type IrisActivationControlResult =
@@ -12,6 +14,11 @@ export type IrisActivationControlResult =
     readonly readiness: 'immediate' | 'next-step'
   }
   | { readonly status: 'already-active'; readonly capabilityId: string }
+  | {
+    readonly status: 'delegated'
+    readonly capabilityId: string
+    readonly route: Extract<CapabilityRoute, { kind: 'dsh-skill' }>
+  }
   | { readonly status: 'not-found'; readonly capabilityId: string; readonly reason: 'not-catalogued' }
   | { readonly status: 'denied'; readonly capabilityId: string; readonly reason: string }
   | { readonly status: 'blocked'; readonly capabilityId: string; readonly reason: string }
@@ -40,9 +47,9 @@ export function installIrisActivate(
 ): () => void {
   return agentCtx.tools.register(defineTool({
     name: IRIS_ACTIVATE_TOOL_NAME,
-    description: 'Activate one catalogued dsh-iris capability for this Agent. Use the capability id returned by iris_search or iris_recommend.',
+    description: 'Route one catalogued dsh-iris capability for this Agent. Tool capabilities activate lazily; native Skill capabilities delegate to the DSH skill Tool.',
     parameters: {
-      capabilityId: { type: 'string', required: true, description: 'Catalog capability id, for example tool:text_word_count.' },
+      capabilityId: { type: 'string', required: true, description: 'Catalog capability id, for example tool:text_word_count or skill:repo-review.' },
     },
     output: {
       schema: { type: 'json' },

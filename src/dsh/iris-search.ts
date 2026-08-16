@@ -15,7 +15,8 @@ export function installIrisSearch(
   search: (
     query: string,
     kind?: 'tool' | 'skill',
-  ) => readonly CapabilitySearchResult[] = (query, kind) => searchCapabilityCatalog(
+    signal?: AbortSignal,
+  ) => Promise<readonly CapabilitySearchResult[]> | readonly CapabilitySearchResult[] = (query, kind) => searchCapabilityCatalog(
     catalog.list().map(candidate => candidate.capability),
     { query, ...kind === undefined ? {} : { kind } },
   ),
@@ -31,8 +32,8 @@ export function installIrisSearch(
       schema: { type: 'json' },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
     },
-    execute(args): Promise<JsonValue> {
-      const results = search(args.query, args.kind).map(result => ({
+    async execute(args, exec): Promise<JsonValue> {
+      const results = (await search(args.query, args.kind, exec.signal)).map(result => ({
         id: result.capability.id,
         kind: result.capability.kind,
         name: result.capability.name,
@@ -42,8 +43,9 @@ export function installIrisSearch(
         status: 'catalogued',
         score: result.score,
         reasons: [...result.reasons],
+        route: result.route,
       }))
-      return Promise.resolve({ results } as JsonValue)
+      return { results } as JsonValue
     },
   }))
 }

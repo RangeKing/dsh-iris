@@ -22,6 +22,8 @@ async function harness(): Promise<Context> {
       complete: true,
       skills: scope === undefined ? [] : [{
         name: 'fixture-skill',
+        description: 'Fixture Skill summary.',
+        invocation: { modelInvocable: true, userInvocable: true },
         source: 'bundled',
         provider: 'fixture-provider',
       }],

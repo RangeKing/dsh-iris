@@ -11,13 +11,15 @@ describe('dsh-iris public identity', () => {
   it('uses the Iris package, Bundle, and config names', async () => {
     const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')) as {
       name: string
+      version: string
       description: string
     }
     const patch = await readFile(resolve(root, 'cordis.patch.yml'), 'utf8')
 
     expect(pkg).toMatchObject({
       name: 'dsh-iris',
-      description: 'Progressive capability activation for DeepSeek Harness.',
+      version: '0.3.0',
+      description: 'Progressive capability routing for DeepSeek Harness.',
     })
     expect(irisPlugin.name).toBe('dsh-iris')
     expect(resolveConfig()).toMatchObject({

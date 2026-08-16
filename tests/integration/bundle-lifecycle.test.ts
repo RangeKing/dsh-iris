@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type AgentRegistry from '@deepseek-ai/dsh-agent'
 import type SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import type SkillRegistry from '@deepseek-ai/dsh-skill'
 import type ToolRuntime from '@deepseek-ai/dsh-tools'
 import { describe, expect, it } from 'vitest'
 
@@ -17,6 +18,7 @@ describe('dsh-iris plugin lifecycle', () => {
 
     root.provide('tools', Object.freeze({}) as ToolRuntime)
     root.provide('systemPrompt', Object.freeze({}) as SystemPrompt)
+    root.provide('skills', Object.freeze({}) as SkillRegistry)
     root.provide('agents', Object.freeze({ list: () => [] }) as unknown as AgentRegistry)
     await fiber
 

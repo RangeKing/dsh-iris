@@ -8,11 +8,12 @@ import type {
 } from '@deepseek-ai/dsh-tools'
 
 import {
-  capabilityRanker,
   demandFromExplicitActivation,
   demandFromUnknownTool,
   searchCapabilityCatalog,
   selectIrisModePolicy,
+  routeCapability,
+  type CapabilityRoute,
   type CapabilityDemand,
   type CapabilitySearchResult,
   type IrisModePolicy,
@@ -22,6 +23,7 @@ import type { PluginFinder, RankedPluginCandidate } from '../discovery/index.js'
 import {
   activateLocalTool,
   DshCapabilitySurface,
+  DshSkillCapabilitySource,
   evaluateIrisFailure,
   evaluateIrisRequirement,
   readAgentPresetIdentity,
@@ -49,6 +51,12 @@ export type IrisRuntimeOutcome =
   }
   | { readonly status: 'evaluated'; readonly evaluation: IrisEvaluation }
   | { readonly status: 'already-active'; readonly evaluation: IrisEvaluation }
+  | {
+    readonly status: 'delegated'
+    readonly evaluation: IrisEvaluation
+    readonly capabilityId: string
+    readonly route: Extract<CapabilityRoute, { kind: 'dsh-skill' }>
+  }
   | { readonly status: 'not-found'; readonly evaluation: IrisEvaluation }
   | {
     readonly status: 'capability-ready'
@@ -111,6 +119,7 @@ export class IrisRuntime {
   readonly finder: PluginFinder | undefined
 
   private readonly coordinator: MountCoordinator
+  private readonly skillSource: DshSkillCapabilitySource
   private readonly logLevel: IrisLogLevel
   private readonly lifetime = new AbortController()
   private runtimeFiber: Fiber | undefined
@@ -121,6 +130,7 @@ export class IrisRuntime {
   private surfaceValue: DshCapabilitySurface | undefined
   private runtimeCtx: Context | undefined
   private readonly recommendedQueries = new Set<string>()
+  private static readonly RECOMMENDED_QUERY_LIMIT = 256
 
   constructor(readonly agentCtx: Context, options: IrisRuntimeOptions) {
     const agent = (agentCtx as Context & { readonly agent?: Agent }).agent
@@ -131,6 +141,7 @@ export class IrisRuntime {
     this.finder = options.finder
     this.logLevel = options.logLevel
     this.coordinator = options.coordinator ?? new MountCoordinator(new DirectFiberMountAdapter())
+    this.skillSource = new DshSkillCapabilitySource(agentCtx)
   }
 
   get ready(): Promise<void> {
@@ -155,25 +166,31 @@ export class IrisRuntime {
     return this.initialization ??= this.initialize(AbortSignal.any([signal, this.lifetime.signal]))
   }
 
-  search(query: string, kind?: 'tool' | 'skill'): readonly CapabilitySearchResult[] {
+  async search(
+    query: string,
+    kind?: 'tool' | 'skill',
+    signal?: AbortSignal,
+  ): Promise<readonly CapabilitySearchResult[]> {
+    await this.ready
     if (!this.modePolicy.search) return []
     const demand: Extract<CapabilityDemand, { kind: 'search' }> = {
       kind: 'search',
       query,
       ...kind === undefined ? {} : { capabilityKind: kind },
     }
-    return this.searchDemand(demand)
+    return await this.searchDemand(demand, signal)
   }
 
-  recommend(query: string): IrisRecommendationControlResult {
+  async recommend(query: string, signal?: AbortSignal): Promise<IrisRecommendationControlResult> {
+    await this.ready
     if (!this.modePolicy.search) return { deduplicated: false, results: [] }
     const fingerprint = query.trim().toLowerCase().replace(/\s+/gu, ' ')
     if (this.recommendedQueries.has(fingerprint)) return { deduplicated: true, results: [] }
-    this.recommendedQueries.add(fingerprint)
+    this.rememberRecommendation(fingerprint)
     return {
       deduplicated: false,
-      results: capabilityRanker.rank(
-        this.catalog.list().map(candidate => candidate.capability),
+      results: searchCapabilityCatalog(
+        await this.discoveryCapabilities(signal),
         {
           query,
           visible: this.surface.snapshot().visible,
@@ -186,11 +203,12 @@ export class IrisRuntime {
 
   private searchDemand(
     demand: Extract<CapabilityDemand, { kind: 'search' }>,
-  ): readonly CapabilitySearchResult[] {
-    return searchCapabilityCatalog(
-      this.catalog.list().map(candidate => candidate.capability),
+    signal?: AbortSignal,
+  ): Promise<readonly CapabilitySearchResult[]> {
+    return this.discoveryCapabilities(signal).then(catalog => searchCapabilityCatalog(
+      catalog,
       { query: demand.query, ...demand.capabilityKind === undefined ? {} : { kind: demand.capabilityKind } },
-    )
+    ))
   }
 
   async evaluate(demand: Extract<CapabilityDemand, { kind: 'unknown-tool' }>): Promise<IrisDryRunEvaluation> {
@@ -221,6 +239,12 @@ export class IrisRuntime {
         }
       case 'already-active':
         return { status: 'already-active', capabilityId: outcome.evaluation.requirement.id }
+      case 'delegated':
+        return {
+          status: 'delegated',
+          capabilityId: outcome.capabilityId,
+          route: outcome.route,
+        }
       case 'not-found':
         return {
           status: 'not-found',
@@ -251,7 +275,7 @@ export class IrisRuntime {
     await this.ready
     if (demand.kind === 'search') {
       if (!this.modePolicy.search) return this.record({ status: 'not-applicable' })
-      return this.record({ status: 'searched', demand, results: this.searchDemand(demand) })
+      return this.record({ status: 'searched', demand, results: await this.searchDemand(demand, cancellation) })
     }
     if (demand.kind === 'unknown-tool' && demand.signal.owner.agentId !== this.agent.id) {
       return this.record({ status: 'blocked', reason: 'agent-ownership-unproven' })
@@ -267,6 +291,22 @@ export class IrisRuntime {
         config: { policy: this.modePolicy.resolutionPolicy },
       })
     this.debug(`policy ${this.modePolicy.id}: ${evaluation.decision.action}`)
+
+    if (demand.kind === 'explicit-activation' && requirement.kind === 'skill') {
+      if (!this.modePolicy.search) return this.record({ status: 'evaluated', evaluation })
+      const skill = await this.skillSource.find(requirement.id, cancellation)
+      if (skill === undefined) return this.record({ status: 'not-found', evaluation })
+      const route = routeCapability(skill)
+      if (route.kind !== 'dsh-skill') {
+        return this.record({ status: 'blocked', evaluation, reason: 'invalid-skill-route' })
+      }
+      return this.record({
+        status: 'delegated',
+        evaluation,
+        capabilityId: skill.id,
+        route,
+      })
+    }
 
     if (demand.kind === 'explicit-activation' && evaluation.resolution.status === 'missing') {
       return this.record({ status: 'not-found', evaluation })
@@ -402,9 +442,9 @@ export class IrisRuntime {
     const fiber = this.agentCtx.plugin(Object.assign((ctx: Context) => {
       this.runtimeCtx = ctx
       const surface = new DshCapabilitySurface(ctx, this.modePolicy, this.catalog, {
-        search: (query, kind) => this.search(query, kind),
+        search: (query, kind, cancellation) => this.search(query, kind, cancellation),
         activate: (capabilityId, cancellation) => this.activate(capabilityId, cancellation),
-        recommend: query => this.recommend(query),
+        recommend: (query, cancellation) => this.recommend(query, cancellation),
       })
       this.surfaceValue = surface
       ctx.effect(() => {
@@ -415,7 +455,7 @@ export class IrisRuntime {
           surface.dispose()
         }
       }, 'dsh-iris.aperture()')
-    }, { inject: ['tools', 'systemPrompt'] }))
+    }, { inject: ['tools', 'skills', 'systemPrompt'] }))
     this.runtimeFiber = fiber
     try {
       await fiber
@@ -463,6 +503,21 @@ export class IrisRuntime {
   private record<T extends IrisRuntimeOutcome>(outcome: T): T {
     this.outcome = outcome
     return outcome
+  }
+
+  private async discoveryCapabilities(signal?: AbortSignal) {
+    const tools = this.catalog.list()
+      .map(candidate => candidate.capability)
+      .filter(capability => capability.kind === 'tool')
+    const skills = await this.skillSource.list(signal)
+    return [...tools, ...skills]
+  }
+
+  private rememberRecommendation(fingerprint: string): void {
+    this.recommendedQueries.add(fingerprint)
+    if (this.recommendedQueries.size <= IrisRuntime.RECOMMENDED_QUERY_LIMIT) return
+    const oldest = this.recommendedQueries.values().next().value as string | undefined
+    if (oldest !== undefined) this.recommendedQueries.delete(oldest)
   }
 
   private info(message: string): void {

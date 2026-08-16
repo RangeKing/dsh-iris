@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import { isModelInvocable, type SkillSummary } from '@deepseek-ai/dsh-skill'
 
 import type {
   CapabilityDescriptor,
@@ -20,15 +21,13 @@ interface ToolSurface {
   schemas(scope?: object): readonly ToolSchemaObservation[]
 }
 
-interface SkillSummaryObservation {
-  readonly name: string
-  readonly source: string
-  readonly provider: string
-}
-
 interface SkillSurface {
-  snapshot(options?: { readonly scope?: object }): Promise<{
-    readonly skills: readonly SkillSummaryObservation[]
+  snapshot(options?: {
+    readonly cwd?: string
+    readonly scope?: object
+    readonly signal?: AbortSignal
+  }): Promise<{
+    readonly skills: readonly SkillSummary[]
     readonly complete: boolean
   }>
 }
@@ -96,6 +95,7 @@ export function capabilitySnapshotVersion(
 /** Read the current Agent's authoritative DSH tool and skill surfaces. */
 export async function createCapabilitySnapshot(
   agentCtx: Context,
+  signal?: AbortSignal,
 ): Promise<CapabilitySnapshot> {
   const agent = ownerOf(agentCtx)
   const toolsSurface = serviceOf<ToolSurface>(agentCtx, 'tools')
@@ -111,14 +111,25 @@ export async function createCapabilitySnapshot(
     trust: 'known',
   }))
   const skillsSurface = serviceOf<SkillSurface>(agentCtx, 'skills')
-  const skillObservation = await skillsSurface?.snapshot({ scope: agent })
-  const skills: CapabilityDescriptor[] = (skillObservation?.skills ?? []).map((skill) => ({
-    id: `skill:${skill.name}`,
-    kind: 'skill',
-    name: skill.name,
-    ...skillProvenance(skill.source),
-    providerId: skill.provider,
-  }))
+  const cwd = (agent as unknown as { session?: { header?: { cwd?: string } } }).session?.header?.cwd
+  const skillObservation = await skillsSurface?.snapshot({
+    scope: agent,
+    ...cwd === undefined ? {} : { cwd },
+    ...signal === undefined ? {} : { signal },
+  })
+  const observedSkills = skillObservation?.complete === true ? skillObservation.skills : []
+  const skills: CapabilityDescriptor[] = observedSkills
+    .filter(isModelInvocable)
+    .map((skill) => ({
+      id: `skill:${skill.name}`,
+      kind: 'skill',
+      name: skill.name,
+      description: skill.description,
+      ...skill.whenToUse === undefined ? {} : { whenToUse: skill.whenToUse },
+      ...skillProvenance(skill.source),
+      providerId: skill.provider,
+      provenance: { kind: 'dsh-native-skill', reference: skill.source },
+    }))
   tools.sort(compareCapability)
   skills.sort(compareCapability)
 

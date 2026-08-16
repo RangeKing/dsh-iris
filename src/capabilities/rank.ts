@@ -28,13 +28,16 @@ function baseScore(
   query: CapabilityRankQuery,
 ): CapabilityRankResult | undefined {
   if (query.kind !== undefined && capability.kind !== query.kind) return undefined
-  if (query.requirePtcCompatible === true && capability.ptcCompatible !== true) return undefined
+  if (query.requirePtcCompatible === true
+    && capability.kind === 'tool'
+    && capability.ptcCompatible !== true) return undefined
   const needle = normalized(query.query)
   if (needle.length === 0) return undefined
   const id = normalized(capability.id)
   const name = normalized(capability.name)
   const keywords = capability.keywords?.map(normalized) ?? []
   const description = normalized(capability.description ?? '')
+  const whenToUse = normalized(capability.whenToUse ?? '')
   if (id === needle || id === `${capability.kind}:${needle}`) {
     return { capability, score: 100, reasons: ['exact capability id'] }
   }
@@ -49,6 +52,7 @@ function baseScore(
   const nameMatches = queryTokens.filter(token => nameTokens.has(token)).length
   const keywordMatches = queryTokens.filter(token => keywordTokens.has(token)).length
   const descriptionMatches = queryTokens.filter(token => description.includes(token)).length
+  const whenToUseMatches = queryTokens.filter(token => whenToUse.includes(token)).length
   if (nameMatches > 0) {
     score += nameMatches * 30
     reasons.push('name token match')
@@ -60,6 +64,10 @@ function baseScore(
   if (descriptionMatches > 0) {
     score += descriptionMatches * 10
     reasons.push('description token match')
+  }
+  if (whenToUseMatches > 0) {
+    score += whenToUseMatches * 15
+    reasons.push('when-to-use token match')
   }
   return score === 0 ? undefined : { capability, score, reasons }
 }

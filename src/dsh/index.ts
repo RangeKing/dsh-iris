@@ -18,6 +18,10 @@ export {
 export { DshCapabilitySurface, type DshCapabilitySurfaceOptions } from './capability-surface.js'
 export { installIrisSearch, IRIS_SEARCH_TOOL_NAME } from './iris-search.js'
 export {
+  DshSkillCapabilitySource,
+  skillSummaryCapability,
+} from './skill-capabilities.js'
+export {
   installIrisActivate,
   IRIS_ACTIVATE_TOOL_NAME,
   type InstallIrisActivateOptions,

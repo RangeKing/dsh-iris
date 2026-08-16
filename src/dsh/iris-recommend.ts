@@ -13,7 +13,10 @@ export interface IrisRecommendationControlResult {
 }
 
 export interface InstallIrisRecommendOptions {
-  recommend(query: string): IrisRecommendationControlResult
+  recommend(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<IrisRecommendationControlResult> | IrisRecommendationControlResult
 }
 
 /** Register side-effect-free task-text recommendation in the exact calling Agent scope. */
@@ -31,9 +34,9 @@ export function installIrisRecommend(
       schema: { type: 'json' },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
     },
-    execute(args): Promise<JsonValue> {
-      const recommendation = options.recommend(args.query)
-      return Promise.resolve({
+    async execute(args, exec): Promise<JsonValue> {
+      const recommendation = await options.recommend(args.query, exec.signal)
+      return {
         deduplicated: recommendation.deduplicated,
         results: recommendation.results.map(result => ({
           id: result.capability.id,
@@ -45,8 +48,9 @@ export function installIrisRecommend(
           status: 'catalogued',
           score: result.score,
           reasons: [...result.reasons],
+          route: result.route,
         })),
-      } as JsonValue)
+      } as JsonValue
     },
   }))
 }
