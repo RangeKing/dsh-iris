@@ -42,6 +42,7 @@ describe('Capability Catalog search', () => {
       score: 90,
       reasons: ['exact keyword'],
       route: { kind: 'iris-activate', capabilityId: 'tool:text_word_count' },
+      status: 'catalogued',
     }])
   })
 

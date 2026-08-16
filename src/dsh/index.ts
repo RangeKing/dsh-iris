@@ -22,6 +22,12 @@ export {
   skillSummaryCapability,
 } from './skill-capabilities.js'
 export {
+  DshMcpCapabilitySource,
+  mcpToolCapability,
+  parseDshMcpToolName,
+  type DshMcpToolIdentity,
+} from './mcp-capabilities.js'
+export {
   installIrisActivate,
   IRIS_ACTIVATE_TOOL_NAME,
   type InstallIrisActivateOptions,

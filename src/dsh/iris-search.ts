@@ -14,7 +14,7 @@ export function installIrisSearch(
   catalog: LocalProviderCatalog,
   search: (
     query: string,
-    kind?: 'tool' | 'skill',
+    kind?: 'tool' | 'skill' | 'mcp',
     signal?: AbortSignal,
   ) => Promise<readonly CapabilitySearchResult[]> | readonly CapabilitySearchResult[] = (query, kind) => searchCapabilityCatalog(
     catalog.list().map(candidate => candidate.capability),
@@ -23,10 +23,10 @@ export function installIrisSearch(
 ): () => void {
   return agentCtx.tools.register(defineTool({
     name: IRIS_SEARCH_TOOL_NAME,
-    description: 'Search the dsh-iris capability catalog. Search returns metadata only and never loads or activates a Provider.',
+    description: 'Search the dsh-iris Tool, native Skill, and connected MCP discovery surface. Search is metadata-only and does not activate a runtime.',
     parameters: {
       query: { type: 'string', required: true, description: 'Capability description, name, or keyword.' },
-      kind: { type: 'string', enum: ['tool', 'skill'], description: 'Optional capability kind.' },
+      kind: { type: 'string', enum: ['tool', 'skill', 'mcp'], description: 'Optional capability kind.' },
     },
     output: {
       schema: { type: 'json' },
@@ -40,7 +40,7 @@ export function installIrisSearch(
         description: result.capability.description ?? null,
         providerId: result.capability.providerId ?? null,
         ptcCompatible: result.capability.ptcCompatible ?? null,
-        status: 'catalogued',
+        status: result.status,
         score: result.score,
         reasons: [...result.reasons],
         route: result.route,

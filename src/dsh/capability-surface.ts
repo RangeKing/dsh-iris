@@ -10,6 +10,7 @@ import {
 } from '../capabilities/index.js'
 import type { CapabilityDescriptor } from '../domain/index.js'
 import type { LocalProviderCatalog } from '../providers/index.js'
+import { mcpToolCapability } from './mcp-capabilities.js'
 import {
   installIrisActivate,
   IRIS_ACTIVATE_TOOL_NAME,
@@ -26,7 +27,7 @@ export interface DshCapabilitySurfaceOptions {
   readonly inheritedAllow?: readonly string[]
   readonly search?: (
     query: string,
-    kind?: 'tool' | 'skill',
+    kind?: 'tool' | 'skill' | 'mcp',
     signal?: AbortSignal,
   ) => Promise<readonly CapabilitySearchResult[]> | readonly CapabilitySearchResult[]
   readonly activate?: (
@@ -48,6 +49,16 @@ function toolDescriptor(name: string): CapabilityDescriptor {
     trust: 'known',
     provenance: { kind: 'dsh-runtime' },
   }
+}
+
+interface ToolSchemaObservation {
+  readonly name: string
+  readonly description: string
+  readonly parameters: unknown
+}
+
+function runtimeToolDescriptor(tool: ToolSchemaObservation): CapabilityDescriptor {
+  return mcpToolCapability(tool) ?? toolDescriptor(tool.name)
 }
 
 function irisControlDescriptor(name: string): CapabilityDescriptor {
@@ -96,7 +107,7 @@ export class DshCapabilitySurface {
     }
 
     for (const tool of this.agentCtx.tools.schemas(this.agent)) {
-      const descriptor = toolDescriptor(tool.name)
+      const descriptor = runtimeToolDescriptor(tool)
       this.descriptors.set(descriptor.id, descriptor)
       this.state.activate(descriptor.id)
       this.state.reveal(descriptor.id)

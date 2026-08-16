@@ -19,6 +19,11 @@ export type IrisActivationControlResult =
     readonly capabilityId: string
     readonly route: Extract<CapabilityRoute, { kind: 'dsh-skill' }>
   }
+  | {
+    readonly status: 'already-available'
+    readonly capabilityId: string
+    readonly route: Extract<CapabilityRoute, { kind: 'dsh-mcp-tool' }>
+  }
   | { readonly status: 'not-found'; readonly capabilityId: string; readonly reason: 'not-catalogued' }
   | { readonly status: 'denied'; readonly capabilityId: string; readonly reason: string }
   | { readonly status: 'blocked'; readonly capabilityId: string; readonly reason: string }
@@ -47,9 +52,9 @@ export function installIrisActivate(
 ): () => void {
   return agentCtx.tools.register(defineTool({
     name: IRIS_ACTIVATE_TOOL_NAME,
-    description: 'Route one catalogued dsh-iris capability for this Agent. Tool capabilities activate lazily; native Skill capabilities delegate to the DSH skill Tool.',
+    description: 'Route one dsh-iris capability for this Agent. Local Tools activate lazily; Skills and connected MCP Tools delegate to their native DSH routes.',
     parameters: {
-      capabilityId: { type: 'string', required: true, description: 'Catalog capability id, for example tool:text_word_count or skill:repo-review.' },
+      capabilityId: { type: 'string', required: true, description: 'Capability id, for example tool:text_word_count, skill:repo-review, or mcp:github/create_issue.' },
     },
     output: {
       schema: { type: 'json' },

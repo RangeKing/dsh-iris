@@ -1,8 +1,6 @@
 import z from '@deepseek-ai/schemastery'
 
 import type { ConfiguredIrisModePolicy } from './capabilities/index.js'
-import type { CapabilityKind } from './domain/index.js'
-
 export type ConfiguredPolicy = ConfiguredIrisModePolicy
 export type IrisLogLevel = 'silent' | 'info' | 'debug'
 
@@ -11,7 +9,7 @@ export interface ConfiguredCapability {
   name?: string
   description?: string
   keywords?: string[]
-  kind: CapabilityKind
+  kind: 'tool' | 'skill'
   ptcCompatible?: boolean
   permissions?: string[]
 }

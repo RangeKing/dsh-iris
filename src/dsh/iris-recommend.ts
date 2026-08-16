@@ -26,7 +26,7 @@ export function installIrisRecommend(
 ): () => void {
   return agentCtx.tools.register(defineTool({
     name: IRIS_RECOMMEND_TOOL_NAME,
-    description: 'Recommend up to three catalogued dsh-iris capabilities for task text. Recommendation reads metadata only; use iris_activate to load one.',
+    description: 'Recommend up to three Tool, native Skill, or connected MCP capabilities for supplied text. Recommendation is metadata-only; follow each result route.',
     parameters: {
       query: { type: 'string', required: true, description: 'Current task text or a concise description of the needed capability.' },
     },
@@ -45,7 +45,7 @@ export function installIrisRecommend(
           description: result.capability.description ?? null,
           providerId: result.capability.providerId ?? null,
           ptcCompatible: result.capability.ptcCompatible ?? null,
-          status: 'catalogued',
+          status: result.status,
           score: result.score,
           reasons: [...result.reasons],
           route: result.route,

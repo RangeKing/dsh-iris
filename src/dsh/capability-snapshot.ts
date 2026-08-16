@@ -8,6 +8,7 @@ import type {
   CapabilitySource,
   CapabilityTrust,
 } from '../domain/index.js'
+import { mcpToolCapability } from './mcp-capabilities.js'
 
 interface AgentIdentity {
   readonly id: string
@@ -15,6 +16,8 @@ interface AgentIdentity {
 
 interface ToolSchemaObservation {
   readonly name: string
+  readonly description: string
+  readonly parameters: unknown
 }
 
 interface ToolSurface {
@@ -103,13 +106,15 @@ export async function createCapabilitySnapshot(
     throw new Error('dsh-iris: ctx.tools is unavailable')
   }
 
-  const tools: CapabilityDescriptor[] = toolsSurface.schemas(agent).map(tool => ({
-    id: `tool:${tool.name}`,
-    kind: 'tool',
-    name: tool.name,
-    source: 'installed',
-    trust: 'known',
-  }))
+  const tools: CapabilityDescriptor[] = toolsSurface.schemas(agent).map(tool => (
+    mcpToolCapability(tool) ?? {
+      id: `tool:${tool.name}`,
+      kind: 'tool',
+      name: tool.name,
+      source: 'installed',
+      trust: 'known',
+    }
+  ))
   const skillsSurface = serviceOf<SkillSurface>(agentCtx, 'skills')
   const cwd = (agent as unknown as { session?: { header?: { cwd?: string } } }).session?.header?.cwd
   const skillObservation = await skillsSurface?.snapshot({

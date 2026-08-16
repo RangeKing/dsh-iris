@@ -23,6 +23,7 @@ import type { PluginFinder, RankedPluginCandidate } from '../discovery/index.js'
 import {
   activateLocalTool,
   DshCapabilitySurface,
+  DshMcpCapabilitySource,
   DshSkillCapabilitySource,
   evaluateIrisFailure,
   evaluateIrisRequirement,
@@ -56,6 +57,12 @@ export type IrisRuntimeOutcome =
     readonly evaluation: IrisEvaluation
     readonly capabilityId: string
     readonly route: Extract<CapabilityRoute, { kind: 'dsh-skill' }>
+  }
+  | {
+    readonly status: 'already-available'
+    readonly evaluation: IrisEvaluation
+    readonly capabilityId: string
+    readonly route: Extract<CapabilityRoute, { kind: 'dsh-mcp-tool' }>
   }
   | { readonly status: 'not-found'; readonly evaluation: IrisEvaluation }
   | {
@@ -119,6 +126,7 @@ export class IrisRuntime {
   readonly finder: PluginFinder | undefined
 
   private readonly coordinator: MountCoordinator
+  private readonly mcpSource: DshMcpCapabilitySource
   private readonly skillSource: DshSkillCapabilitySource
   private readonly logLevel: IrisLogLevel
   private readonly lifetime = new AbortController()
@@ -141,6 +149,7 @@ export class IrisRuntime {
     this.finder = options.finder
     this.logLevel = options.logLevel
     this.coordinator = options.coordinator ?? new MountCoordinator(new DirectFiberMountAdapter())
+    this.mcpSource = new DshMcpCapabilitySource(agentCtx)
     this.skillSource = new DshSkillCapabilitySource(agentCtx)
   }
 
@@ -168,7 +177,7 @@ export class IrisRuntime {
 
   async search(
     query: string,
-    kind?: 'tool' | 'skill',
+    kind?: 'tool' | 'skill' | 'mcp',
     signal?: AbortSignal,
   ): Promise<readonly CapabilitySearchResult[]> {
     await this.ready
@@ -245,6 +254,12 @@ export class IrisRuntime {
           capabilityId: outcome.capabilityId,
           route: outcome.route,
         }
+      case 'already-available':
+        return {
+          status: 'already-available',
+          capabilityId: outcome.capabilityId,
+          route: outcome.route,
+        }
       case 'not-found':
         return {
           status: 'not-found',
@@ -304,6 +319,22 @@ export class IrisRuntime {
         status: 'delegated',
         evaluation,
         capabilityId: skill.id,
+        route,
+      })
+    }
+
+    if (demand.kind === 'explicit-activation' && requirement.kind === 'mcp') {
+      if (!this.modePolicy.search) return this.record({ status: 'evaluated', evaluation })
+      const capability = this.mcpSource.find(requirement.id)
+      if (capability === undefined) return this.record({ status: 'not-found', evaluation })
+      const route = routeCapability(capability)
+      if (route.kind !== 'dsh-mcp-tool') {
+        return this.record({ status: 'blocked', evaluation, reason: 'invalid-mcp-route' })
+      }
+      return this.record({
+        status: 'already-available',
+        evaluation,
+        capabilityId: capability.id,
         route,
       })
     }
@@ -510,7 +541,8 @@ export class IrisRuntime {
       .map(candidate => candidate.capability)
       .filter(capability => capability.kind === 'tool')
     const skills = await this.skillSource.list(signal)
-    return [...tools, ...skills]
+    const mcp = this.mcpSource.list()
+    return [...tools, ...skills, ...mcp]
   }
 
   private rememberRecommendation(fingerprint: string): void {

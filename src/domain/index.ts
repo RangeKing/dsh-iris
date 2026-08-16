@@ -1,5 +1,5 @@
 export type CapabilityId = string
-export type CapabilityKind = 'tool' | 'skill'
+export type CapabilityKind = 'tool' | 'skill' | 'mcp'
 
 /** One deterministic fact supporting a requirement, snapshot, or candidate. */
 export interface CapabilityEvidence {
@@ -37,9 +37,14 @@ export interface CapabilityProvenance {
     | 'configured-local'
     | 'dsh-runtime'
     | 'dsh-native-skill'
+    | 'dsh-mcp-tool'
     | 'community-metadata'
     | 'iris-control'
   readonly reference?: string
+  /** DSH MCP namespace recovered through the centralized public-name adapter. */
+  readonly serverName?: string
+  /** MCP tool token represented by the registered DSH public name. */
+  readonly toolName?: string
 }
 
 /** Runtime-neutral description of one capability surface. */
