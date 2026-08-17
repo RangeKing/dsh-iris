@@ -17,19 +17,21 @@ declare module '@deepseek-ai/cordis' {
 
 /** Shared Bundle resources plus one owned IrisRuntime per live Agent. */
 export class IrisBundle {
-  readonly catalog: ConfiguredLocalProviderCatalog
-  readonly finder: GitHubPluginFinder | undefined
-
   private readonly runtimes = new Map<Agent, IrisRuntime>()
   private readonly cleanups = new Map<Agent, OwnerCleanup>()
   private stopCreated: (() => void) | undefined
   private stopping = false
   private readonly ctx: Context
+  private configValue: ResolvedIrisConfig
+  private catalogValue: ConfiguredLocalProviderCatalog
+  private finderValue: GitHubPluginFinder | undefined
+  private reconfigureTail: Promise<void> = Promise.resolve()
 
-  constructor(ctx: Context, private readonly config: ResolvedIrisConfig) {
+  constructor(ctx: Context, config: ResolvedIrisConfig) {
     this.ctx = ctx
-    this.catalog = new ConfiguredLocalProviderCatalog(config.providers)
-    this.finder = config.discovery.enabled
+    this.configValue = config
+    this.catalogValue = new ConfiguredLocalProviderCatalog(config.providers)
+    this.finderValue = config.discovery.enabled
       ? new GitHubPluginFinder({
         cacheTtlMs: config.discovery.cacheTtlMs,
         maxResults: config.discovery.maxResults,
@@ -37,10 +39,35 @@ export class IrisBundle {
       : undefined
   }
 
+  get catalog(): ConfiguredLocalProviderCatalog { return this.catalogValue }
+  get finder(): GitHubPluginFinder | undefined { return this.finderValue }
+  get config(): ResolvedIrisConfig { return this.configValue }
+
   start(): void {
-    if (!this.config.enabled || this.stopCreated !== undefined) return
-    this.stopCreated = this.ctx.on('agent/created', ({ agent }) => { this.install(agent) })
-    for (const agent of this.ctx.agents.list()) this.install(agent)
+    if (this.stopCreated !== undefined) return
+    this.stopCreated = this.ctx.on('agent/created', ({ agent }) => { this.scheduleInstall(agent) })
+    for (const agent of this.ctx.agents.list()) this.scheduleInstall(agent)
+  }
+
+  /** Apply a committed DSH settings change to every Agent without restarting DSH. */
+  reconfigure(config: ResolvedIrisConfig): Promise<void> {
+    const task = this.reconfigureTail.then(async () => {
+      if (this.stopping || JSON.stringify(config) === JSON.stringify(this.configValue)) return
+      await this.disposeRuntimes()
+      this.configValue = config
+      this.catalogValue = new ConfiguredLocalProviderCatalog(config.providers)
+      this.finderValue = config.discovery.enabled
+        ? new GitHubPluginFinder({
+          cacheTtlMs: config.discovery.cacheTtlMs,
+          maxResults: config.discovery.maxResults,
+        })
+        : undefined
+      if (config.enabled) {
+        for (const agent of this.ctx.agents.list()) this.install(agent)
+      }
+    })
+    this.reconfigureTail = task.catch(() => {})
+    return task
   }
 
   runtimeFor(agent: Agent): IrisRuntime | undefined {
@@ -64,6 +91,15 @@ export class IrisBundle {
     this.stopping = true
     this.stopCreated?.()
     this.stopCreated = undefined
+    await this.reconfigureTail
+    await this.disposeRuntimes()
+  }
+
+  private scheduleInstall(agent: Agent): void {
+    void this.reconfigureTail.then(() => { this.install(agent) })
+  }
+
+  private async disposeRuntimes(): Promise<void> {
     const cleanups = [...this.cleanups.values()]
     this.cleanups.clear()
     this.runtimes.clear()
@@ -71,12 +107,12 @@ export class IrisBundle {
   }
 
   private install(agent: Agent): void {
-    if (this.stopping || this.runtimes.has(agent)) return
+    if (this.stopping || !this.configValue.enabled || this.runtimes.has(agent)) return
     const runtime = new IrisRuntime(agent.ctx, {
-      policy: this.config.policy,
-      catalog: this.catalog,
-      ...this.finder === undefined ? {} : { finder: this.finder },
-      logLevel: this.config.logLevel,
+      policy: this.configValue.policy,
+      catalog: this.catalogValue,
+      ...this.finderValue === undefined ? {} : { finder: this.finderValue },
+      logLevel: this.configValue.logLevel,
     })
     const maybeMaintenance = (agent as Agent & {
       runMaintenance?: <T>(task: (signal: AbortSignal) => Promise<T>) => Promise<T>

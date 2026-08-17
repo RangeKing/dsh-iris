@@ -3,12 +3,15 @@ import { Button, Pill, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 
 import type { CapabilityKind } from '../domain/index.js'
+import type { ConfiguredPolicy, ConfiguredProvider, ResolvedIrisConfig } from '../config.js'
 import type { IrisSessionSnapshot } from '../runtime/snapshot.js'
 import type { IrisSnapshotController } from './controller.js'
 import type { IrisLocaleKey } from './locales.js'
+import type { IrisSettingsController } from './settings-controller.js'
 
 export interface IrisSectionInjected {
   readonly controller: IrisSnapshotController
+  readonly settings: IrisSettingsController
 }
 
 export type IrisSectionProps = PropsRuntime<'settings.section'>
@@ -30,9 +33,97 @@ const panel: CSSProperties = {
 const grid: CSSProperties = { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }
 const muted: CSSProperties = { color: 'var(--dsw-color-text-secondary, #777)', margin: 0, lineHeight: 1.55 }
 const label: CSSProperties = { ...muted, fontSize: 12, letterSpacing: '.02em' }
+const control: CSSProperties = {
+  width: '100%', border: '1px solid var(--dsw-color-border-subtle, rgba(127,127,127,.24))',
+  borderRadius: 9, padding: '9px 10px', background: 'var(--dsw-color-bg-primary, transparent)',
+  color: 'inherit', font: 'inherit', boxSizing: 'border-box',
+}
 
 function metric(value: number | undefined): string {
   return value === undefined ? '—' : value.toLocaleString()
+}
+
+function SettingsControls({ settings, t }: { settings: IrisSettingsController; t: IrisSectionProps['t'] }) {
+  const state = useSyncExternalStore(
+    listener => settings.subscribe(listener),
+    () => settings.getSnapshot(),
+    () => settings.getSnapshot(),
+  )
+  const value = state.value
+  const [adding, setAdding] = useState(false)
+  const [draft, setDraft] = useState({ providerId: '', module: '', capabilityId: '', name: '', description: '', keywords: '', ptcCompatible: false })
+  const writable = state.writable && value !== undefined
+  const update = (field: keyof ResolvedIrisConfig, next: unknown) => { void settings.set(field, next) }
+  const addProvider = () => {
+    if (value === undefined || draft.providerId.trim() === '' || draft.module.trim() === '' || draft.capabilityId.trim() === '') return
+    const provider: ConfiguredProvider = {
+      id: draft.providerId.trim(),
+      module: draft.module.trim(),
+      capabilities: [{
+        id: draft.capabilityId.trim(),
+        kind: 'tool',
+        ...draft.name.trim() === '' ? {} : { name: draft.name.trim() },
+        ...draft.description.trim() === '' ? {} : { description: draft.description.trim() },
+        keywords: draft.keywords.split(',').map(entry => entry.trim()).filter(Boolean),
+        ptcCompatible: draft.ptcCompatible,
+      }],
+    }
+    update('providers', [...value.providers, provider])
+    setAdding(false)
+    setDraft({ providerId: '', module: '', capabilityId: '', name: '', description: '', keywords: '', ptcCompatible: false })
+  }
+
+  return (
+    <section style={panel} data-testid="iris-settings-controls">
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start' }}>
+        <div><h3 style={{ margin: 0 }}>{t('configuration')}</h3><p style={{ ...muted, marginTop: 6, fontSize: 13 }}>{t('configurationDescription')}</p></div>
+        <StateDot state={value?.enabled === true ? 'done' : 'warning'} />
+      </div>
+      {state.status === 'loading' && <p style={{ ...muted, marginTop: 14 }}>{t('settingsLoading')}</p>}
+      {state.status === 'error' && (
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 14 }}>
+          <p style={muted} title={state.message}>{t('settingsError')}</p>
+          <Button size="sm" variant="outline" onClick={() => { void settings.load() }}>{t('retry')}</Button>
+        </div>
+      )}
+      {value !== undefined && (
+        <>
+          <div style={{ ...grid, marginTop: 18 }}>
+            <label><span style={label}>{t('enabled')}</span><select style={control} value={value.enabled ? 'on' : 'off'} disabled={!writable} onChange={event => { update('enabled', event.target.value === 'on') }}><option value="on">{t('enabledOn')}</option><option value="off">{t('enabledOff')}</option></select></label>
+            <label><span style={label}>{t('policy')}</span><select style={control} value={value.policy} disabled={!writable} onChange={event => { update('policy', event.target.value as ConfiguredPolicy) }}><option value="auto">{t('policyAuto')}</option><option value="preserve">{t('policyPreserve')}</option><option value="adaptive">{t('policyAdaptive')}</option><option value="adaptive-code">{t('policyCode')}</option><option value="adaptive-creator">{t('policyCreator')}</option></select></label>
+            <label><span style={label}>{t('discovery')}</span><select style={control} value={value.discovery.enabled ? 'on' : 'off'} disabled={!writable} onChange={event => { update('discovery', { ...value.discovery, enabled: event.target.value === 'on' }) }}><option value="on">{t('enabledOn')}</option><option value="off">{t('enabledOff')}</option></select></label>
+            <label><span style={label}>{t('logLevel')}</span><select style={control} value={value.logLevel} disabled={!writable} onChange={event => { update('logLevel', event.target.value) }}><option value="silent">silent</option><option value="info">info</option><option value="debug">debug</option></select></label>
+            <label><span style={label}>{t('cacheTtl')}</span><select style={control} value={String(value.discovery.cacheTtlMs)} disabled={!writable} onChange={event => { update('discovery', { ...value.discovery, cacheTtlMs: Number(event.target.value) }) }}><option value="300000">5 min</option><option value="900000">15 min</option><option value="3600000">60 min</option></select></label>
+            <label><span style={label}>{t('maxResults')}</span><select style={control} value={String(value.discovery.maxResults)} disabled={!writable} onChange={event => { update('discovery', { ...value.discovery, maxResults: Number(event.target.value) }) }}>{[5, 10, 20, 50].map(count => <option key={count} value={String(count)}>{count}</option>)}</select></label>
+          </div>
+          <div style={{ marginTop: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}><div><strong>{t('providers')}</strong><p style={{ ...muted, marginTop: 4, fontSize: 12 }}>{t('providersDescription')}</p></div><Button size="sm" variant="outline" disabled={!writable} onClick={() => { setAdding(value => !value) }}>{adding ? t('cancel') : t('addProvider')}</Button></div>
+            <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+              {value.providers.length === 0 && <p style={muted}>{t('noProviders')}</p>}
+              {value.providers.map(provider => (
+                <div key={provider.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '10px 12px', borderRadius: 9, background: 'rgba(127,127,127,.06)' }}>
+                  <span><strong>{provider.id}</strong><span style={{ ...muted, display: 'block', fontSize: 12 }}>{provider.module} · {provider.capabilities.map(capability => capability.id).join(', ')}</span></span>
+                  <Button size="sm" variant="outline" disabled={!writable} onClick={() => { update('providers', value.providers.filter(candidate => candidate.id !== provider.id)) }}>{t('remove')}</Button>
+                </div>
+              ))}
+            </div>
+            {adding && (
+              <div style={{ ...grid, marginTop: 14 }}>
+                <label><span style={label}>{t('providerId')}</span><input style={control} value={draft.providerId} onChange={event => { setDraft({ ...draft, providerId: event.target.value }) }} /></label>
+                <label><span style={label}>{t('modulePath')}</span><input style={control} value={draft.module} onChange={event => { setDraft({ ...draft, module: event.target.value }) }} /></label>
+                <label><span style={label}>{t('capabilityId')}</span><input style={control} value={draft.capabilityId} onChange={event => { setDraft({ ...draft, capabilityId: event.target.value }) }} /></label>
+                <label><span style={label}>{t('capabilityName')}</span><input style={control} value={draft.name} onChange={event => { setDraft({ ...draft, name: event.target.value }) }} /></label>
+                <label><span style={label}>{t('description')}</span><input style={control} value={draft.description} onChange={event => { setDraft({ ...draft, description: event.target.value }) }} /></label>
+                <label><span style={label}>{t('keywords')}</span><input style={control} value={draft.keywords} onChange={event => { setDraft({ ...draft, keywords: event.target.value }) }} /></label>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}><input type="checkbox" checked={draft.ptcCompatible} onChange={event => { setDraft({ ...draft, ptcCompatible: event.target.checked }) }} />{t('ptcCompatible')}</label>
+                <div><Button size="sm" disabled={!writable} onClick={addProvider}>{t('saveProvider')}</Button></div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  )
 }
 
 function ModeCards({ snapshot, t }: { snapshot: IrisSessionSnapshot; t: IrisSectionProps['t'] }) {
@@ -65,6 +156,9 @@ function ModeCards({ snapshot, t }: { snapshot: IrisSessionSnapshot; t: IrisSect
 }
 
 function Aperture({ snapshot, t }: { snapshot: IrisSessionSnapshot; t: IrisSectionProps['t'] }) {
+  const keptReady = snapshot.availableCapabilityCount === 0
+    ? 0
+    : Math.round(snapshot.hiddenCapabilityCount / snapshot.availableCapabilityCount * 100)
   return (
     <section style={panel}>
       <h3 style={{ marginTop: 0 }}>{t('currentAperture')}</h3>
@@ -75,7 +169,9 @@ function Aperture({ snapshot, t }: { snapshot: IrisSessionSnapshot; t: IrisSecti
         <div><p style={label}>{t('ceiling')}</p><strong>{snapshot.availableCapabilityCount}</strong></div>
         <div><p style={label}>{t('visibleCapabilities')}</p><strong>{snapshot.visibleToolCount}</strong></div>
         <div><p style={label}>{t('readyCapabilities')}</p><strong>{snapshot.hiddenCapabilityCount}</strong></div>
+        <div><p style={label}>{t('reasoningOwner')}</p><strong>{snapshot.reasoningOwner}</strong></div>
       </div>
+      <p style={{ ...muted, marginTop: 16, fontSize: 13 }}>{t('surfaceEvidence').replace('{percent}', String(keptReady)).replace('{hidden}', String(snapshot.hiddenCapabilityCount)).replace('{total}', String(snapshot.availableCapabilityCount))}</p>
       <div style={{ marginTop: 18, display: 'grid', gap: 9 }}>
         {snapshot.packs.map(pack => (
           <div key={pack.id} style={{ display: 'grid', gridTemplateColumns: '16px minmax(120px,1fr) auto', gap: 9, alignItems: 'center' }}>
@@ -146,7 +242,7 @@ function RecentReveals({ snapshot, t }: { snapshot: IrisSessionSnapshot; t: Iris
 }
 
 /** DSH Settings section backed only by the Host snapshot controller. */
-export function IrisSection({ controller, t }: IrisSectionProps) {
+export function IrisSection({ controller, settings, t }: IrisSectionProps) {
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot)
   const snapshot = state.snapshot
   return (
@@ -157,6 +253,7 @@ export function IrisSection({ controller, t }: IrisSectionProps) {
         <p style={{ ...muted, marginTop: 8, fontSize: 16 }}>{t('subtitle')}</p>
         <div style={{ marginTop: 16 }}><Button variant="outline" size="sm" onClick={() => { void controller.refresh() }}>{t('refresh')}</Button></div>
       </header>
+      <SettingsControls settings={settings} t={t} />
       {state.phase === 'loading' && snapshot === undefined && <p style={muted}>{t('loading')}</p>}
       {state.phase === 'error' && snapshot === undefined && (
         <p role="alert" title={state.message} style={muted}>{t('error')}</p>

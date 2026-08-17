@@ -14,7 +14,10 @@ First public launch candidate.
 - Lazy Agent-scoped Direct Fiber mounting for configured local Tool Providers with single-flight, rollback, cancellation, isolation, and teardown.
 - Step-stable Code aperture using DSH-generated `tools:sdk`; Iris never generates a parallel SDK.
 - Minimal Preserve and Creator control-plane-on-demand strategies.
-- Read-only Agent surface telemetry and a bilingual **Settings → Iris** page in the default DSH Web client.
+- Agent surface telemetry and a bilingual **Settings → Iris** control page in the default DSH Web client.
+- Explained **Iris on / Iris off** dropdown beside the new-session mode selector.
+- Live Host settings for enablement, aperture policy, metadata discovery, logging, and local Provider declarations; no manual settings-file editing required.
+- Prompt-owner coexistence guard plus authoritative kept-ready/visible surface evidence, adapted from routing-suite experiment discipline without adopting its second routing runtime.
 - Reproducible paired Vanilla/Iris benchmark runner, machine-verifiable task matrix, raw JSONL schema, and generated report.
 - Evidence ledger separating official facts, independent results, community hypotheses, Iris hypotheses, and measured Iris results.
 

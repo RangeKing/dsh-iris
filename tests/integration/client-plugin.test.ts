@@ -7,6 +7,10 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => {
     Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => React.createElement('button', props, children),
     Pill: ({ children }: { children?: React.ReactNode }) => React.createElement('span', null, children),
     StateDot: ({ state }: { state: string }) => React.createElement('i', { 'data-state': state }),
+    Menu: () => React.createElement('span'),
+    IconAgentPresetOutline16: () => React.createElement('i'),
+    IconChevronDownOutline14: () => React.createElement('i'),
+    IconSparkle16: () => React.createElement('i'),
   }
 })
 
@@ -14,7 +18,7 @@ import { apply } from '../../src/client/index.js'
 
 describe('DSH Web client plugin', () => {
   it('mounts its Remote contribution and registers Settings → Iris', async () => {
-    let section: Record<string, unknown> | undefined
+    const registrations: Record<string, unknown>[] = []
     let childInject: readonly string[] | undefined
     let disposeChild: (() => void) | undefined
     const disposeRemote = vi.fn(async () => undefined)
@@ -22,7 +26,11 @@ describe('DSH Web client plugin', () => {
     const ctx: Record<string, any> = {
       remote: {
         $mount: vi.fn(async () => disposeRemote),
-        iris: { snapshot: vi.fn(async () => ({ ok: true, value: { enabled: false, reason: 'no-active-agent' } })) },
+        iris: {
+          snapshot: vi.fn(async () => ({ ok: true, value: { enabled: false, reason: 'no-active-agent' } })),
+          config: vi.fn(async () => ({ ok: true, value: { enabled: true, policy: 'auto', providers: [], logLevel: 'info', discovery: { enabled: true, cacheTtlMs: 900000, maxResults: 10 } } })),
+          updateConfig: vi.fn(async (patch: Record<string, unknown>) => ({ ok: true, value: { enabled: true, policy: 'auto', providers: [], logLevel: 'info', discovery: { enabled: true, cacheTtlMs: 900000, maxResults: 10 }, ...patch } })),
+        },
       },
       sessions: {
         list: {
@@ -30,6 +38,8 @@ describe('DSH Web client plugin', () => {
           subscribe: () => stopSessions,
         },
       },
+      connection: { api: { agentPresets: {} } },
+      get: (name: string) => ctx[name],
       locale: {
         register: () => () => undefined,
         bind: () => (key: string) => key === 'nav' ? 'Iris' : key,
@@ -43,13 +53,16 @@ describe('DSH Web client plugin', () => {
       },
       slots: {
         inject: (_name: string, callback: () => unknown) => callback(),
-        register: (options: Record<string, unknown>) => { section = options; return () => undefined },
+        register: (options: Record<string, unknown>) => { registrations.push(options); return () => undefined },
       },
     }
     const dispose = await apply(ctx as never)
     expect(ctx.remote.$mount).toHaveBeenCalledOnce()
     expect(childInject).toContain('remote.iris')
-    expect(section).toMatchObject({ name: 'settings.section', id: 'iris', order: 25, locale: 'iris' })
+    expect(registrations).toContainEqual(expect.objectContaining({ name: 'settings.section', id: 'iris', order: 25, locale: 'iris' }))
+    expect(registrations).toContainEqual(expect.objectContaining({ name: 'conversation.hero.agentPreset', priority: -10, locale: 'iris' }))
+    expect(childInject).not.toContain('settingsScope')
+    await vi.waitFor(() => { expect(ctx.remote.iris.config).toHaveBeenCalledOnce() })
     await dispose()
     expect(stopSessions).toHaveBeenCalledOnce()
     expect(disposeRemote).toHaveBeenCalledOnce()

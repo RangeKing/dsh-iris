@@ -39,6 +39,7 @@ export interface IrisSessionSnapshot {
   readonly visibleSchemaChars: number
   readonly promptChars?: number
   readonly codeSdkChars?: number
+  readonly reasoningOwner: 'iris' | 'native' | `external:${string}`
   readonly transitions: readonly IrisSurfaceTransition[]
 }
 

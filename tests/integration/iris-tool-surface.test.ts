@@ -11,6 +11,7 @@ import {
   IRIS_MINIMAL_REASONING_PERSONA,
   IRIS_MINIMAL_REASONING_VOICE,
   IRIS_REASONING_VOICE_SECTION,
+  EXTERNAL_REASONING_OWNER_SECTIONS,
 } from '../../src/dsh/capability-surface.js'
 import { ConfiguredLocalProviderCatalog } from '../../src/providers/index.js'
 
@@ -28,6 +29,31 @@ function tool(name: string) {
 }
 
 describe('DSH capability visibility seam', () => {
+  it('yields its reasoning scaffold to an explicit router prompt owner', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    ctx.tools.register(tool('bash'))
+    const draft = { id: 'iris-owner-guard' }
+    const scope = createScope(ctx, draft)
+    const agent = Object.assign(draft, { ctx: scope.ctx })
+    Object.defineProperty(scope.ctx, 'agent', { value: agent })
+    let surface!: DshCapabilitySurface
+    await scope.ctx.plugin(Object.assign((inner: Context) => {
+      inner.systemPrompt.section({ name: EXTERNAL_REASONING_OWNER_SECTIONS[0], order: 1, text: 'External router owns the reasoning contract.' })
+      surface = new DshCapabilitySurface(inner, irisModePolicyFor('adaptive'), new ConfiguredLocalProviderCatalog([]))
+      surface.start()
+    }, { inject: ['tools', 'systemPrompt'] }))
+
+    const assembled = await ctx.systemPrompt.assemble({ scope: agent })
+    expect(assembled.sections.map(section => section.name)).toContain('router-persona')
+    expect(assembled.sections.map(section => section.name)).not.toContain('deployment:persona')
+    expect(assembled.sections.map(section => section.name)).not.toContain(IRIS_REASONING_VOICE_SECTION)
+    expect(surface.metrics().reasoningOwner).toBe('external:router-persona')
+    await scope.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('uses tools.restrict for presentation, lookup, and execution authority', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})

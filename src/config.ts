@@ -78,13 +78,17 @@ const DiscoveryConfigSchema: z<DiscoveryConfig> = z.object({
   maxResults: z.number().min(1).max(100).default(10),
 }).default({} as never)
 
-const IrisConfigSchema: z<IrisBundleConfig> = z.object({
+/** Settings-owned Iris section shared by the Bundle loader and DSH Web UI. */
+export const IrisConfigSchema: z<IrisBundleConfig> = z.object({
   enabled: z.boolean().default(true),
   policy: z.union(['auto', 'preserve', 'adaptive', 'adaptive-code', 'adaptive-creator'] as const).default('auto'),
   providers: z.array(ProviderConfig).default([]),
   logLevel: z.union(['silent', 'info', 'debug'] as const).default('info'),
   discovery: DiscoveryConfigSchema,
 }).default({} as never)
+
+/** Same runtime schema after defaults, for the settings owner contract. */
+export const ResolvedIrisConfigSchema = IrisConfigSchema as unknown as z<ResolvedIrisConfig>
 
 /** Loader-visible DSH Bundle configuration schema. */
 export const Config: z<Config> = z.object({
@@ -93,4 +97,13 @@ export const Config: z<Config> = z.object({
 
 export function resolveConfig(config: Config = {}): ResolvedConfig {
   return Config(config) as ResolvedConfig
+}
+
+/** Narrow an untrusted browser settings projection to the resolved Iris contract. */
+export function decodeIrisConfig(value: unknown): ResolvedIrisConfig | undefined {
+  try {
+    return IrisConfigSchema(value as IrisBundleConfig) as ResolvedIrisConfig
+  } catch {
+    return undefined
+  }
 }

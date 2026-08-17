@@ -276,6 +276,7 @@ export class IrisRuntime {
       availableCapabilityCount: capabilityViews.length,
       hiddenCapabilityCount: capabilityViews.length - visibleToolCount,
       visibleSchemaChars: metrics.visibleSchemaChars,
+      reasoningOwner: metrics.reasoningOwner,
       ...metrics.promptChars === undefined ? {} : { promptChars: metrics.promptChars },
       ...metrics.codeSdkChars === undefined ? {} : { codeSdkChars: metrics.codeSdkChars },
       transitions: this.surface.transitions(),

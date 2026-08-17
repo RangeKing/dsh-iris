@@ -205,6 +205,20 @@ function recommendCapabilities(
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('dsh-iris v0.1 Bundle product path', () => {
+  it('reconfigures the live Bundle without a DSH restart', async () => {
+    const ctx = await harness({ iris: { enabled: false, logLevel: 'silent' } })
+    const owner = await publishAgent(ctx, 'standard', 'live-settings')
+    expect(ctx.iris.runtimeFor(owner.agent)).toBeUndefined()
+
+    await ctx.iris.reconfigure({ enabled: true, policy: 'auto', providers: [], logLevel: 'silent', discovery: { enabled: true, cacheTtlMs: 900_000, maxResults: 10 } })
+    await vi.waitFor(() => { expect(ctx.iris.runtimeFor(owner.agent)).toBeDefined() })
+    await runtimeFor(ctx, owner.agent)
+
+    await ctx.iris.reconfigure({ enabled: false, policy: 'auto', providers: [], logLevel: 'silent', discovery: { enabled: true, cacheTtlMs: 900_000, maxResults: 10 } })
+    await vi.waitFor(() => { expect(ctx.iris.runtimeFor(owner.agent)).toBeUndefined() })
+    await ctx.fiber.dispose()
+  })
+
   it('starts with the default empty configuration', async () => {
     const ctx = await harness()
     const owner = await publishAgent(ctx, 'standard', 'default-empty')

@@ -39,6 +39,9 @@ export const IRIS_MINIMAL_REASONING_VOICE =
   + 'Do not begin reasoning with "Let me ...", "I will ...", or "I need ...". '
   + 'Keep reasoning concise and task-directed.'
 
+/** Explicit prompt owners Iris currently knows how to yield to. */
+export const EXTERNAL_REASONING_OWNER_SECTIONS = ['router-persona'] as const
+
 export interface DshCapabilitySurfaceOptions {
   readonly inheritedAllow?: readonly string[]
   readonly search?: (
@@ -68,6 +71,7 @@ export interface IrisSurfaceMetrics {
   readonly visibleSchemaChars: number
   readonly promptChars?: number
   readonly codeSdkChars?: number
+  readonly reasoningOwner: 'iris' | 'native' | `external:${string}`
 }
 
 function toolDescriptor(name: string): CapabilityDescriptor {
@@ -118,6 +122,7 @@ export class DshCapabilitySurface {
   private sequence = 0
   private promptChars: number | undefined
   private codeSdkChars: number | undefined
+  private reasoningOwner: IrisSurfaceMetrics['reasoningOwner'] = 'native'
   private started = false
 
   constructor(
@@ -193,6 +198,19 @@ export class DshCapabilitySurface {
       next,
     ) => {
       const assembled = await next()
+      const externalOwner = EXTERNAL_REASONING_OWNER_SECTIONS.find(name => (
+        assembled.sections.some(section => section.name === name)
+      ))
+      if (externalOwner !== undefined) {
+        assembled.sections = assembled.sections.filter(section => (
+          section.name !== PERSONA_SECTION && section.name !== IRIS_REASONING_VOICE_SECTION
+        ))
+        this.reasoningOwner = `external:${externalOwner}`
+      } else if (this.reasoningScaffoldDisposer !== undefined) {
+        this.reasoningOwner = 'iris'
+      } else {
+        this.reasoningOwner = 'native'
+      }
       if (this.policy.id !== 'preserve') {
         assembled.sections = assembled.sections.filter((section) => {
           if (section.name === 'tools:sdk' || section.name === 'tools:code-only') return true
@@ -278,6 +296,7 @@ export class DshCapabilitySurface {
       nativeToolCount: this.ceilingByName.size,
       visibleToolCount: schemas.length,
       visibleSchemaChars: JSON.stringify(schemas).length,
+      reasoningOwner: this.reasoningOwner,
       ...this.promptChars === undefined ? {} : { promptChars: this.promptChars },
       ...this.codeSdkChars === undefined ? {} : { codeSdkChars: this.codeSdkChars },
     }
