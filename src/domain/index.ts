@@ -28,6 +28,19 @@ export interface CapabilityRequirement {
   readonly evidence: readonly CapabilityEvidence[]
 }
 
+/** Deterministic scaffold handed to DSH's native Creator route. */
+export interface CreationBrief {
+  readonly capabilityId: CapabilityId
+  readonly suggestedName: string
+  readonly purpose: string
+  readonly contract: {
+    readonly name: string
+    readonly inputHint?: string
+    readonly outputHint?: string
+  }
+  readonly route: 'dsh-cordis'
+}
+
 export type CapabilitySource = 'builtin' | 'local' | 'installed' | 'community'
 export type CapabilityTrust = 'builtin' | 'trusted' | 'known' | 'unknown'
 

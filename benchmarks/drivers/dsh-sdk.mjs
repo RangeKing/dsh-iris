@@ -39,10 +39,15 @@ function parseFinalJson(text) {
 }
 
 function eventMetrics(events, wallTimeMs) {
+  const assistantSteps = events.filter(event => event.type === 'turn/end').length
   return {
     wallTimeMs,
-    turnCount: events.filter(event => event.type === 'turn/end').length,
+    turnCount: assistantSteps,
+    assistantSteps,
     toolCallCount: events.filter(event => event.type === 'tool/call').length,
+    toolErrorCount: events.filter(event => event.type === 'tool/error').length,
+    unknownToolCount: null,
+    unknownToolRecoveredCount: null,
   }
 }
 

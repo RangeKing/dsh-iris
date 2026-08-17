@@ -4,6 +4,7 @@ import {
   capabilityPackForTool,
   CapabilityRanker,
   CapabilitySurfaceState,
+  buildCatalogSnapshot,
   searchCapabilityCatalog,
   selectIrisModePolicy,
   type IrisModePolicyId,
@@ -76,6 +77,38 @@ describe('Capability Catalog search', () => {
       requirePtcCompatible: true,
       limit: 3,
     }).map(result => result.capability.id)).toEqual([wordCount.id])
+  })
+
+  it('keeps indexed ranking identical to the legacy ranker across exact, token, substring, and filters', () => {
+    const catalog: CapabilityDescriptor[] = [
+      wordCount,
+      uppercase,
+      {
+        id: 'tool:weather_lookup',
+        kind: 'tool',
+        name: 'weather_lookup',
+        description: 'Look up precipitation for a city.',
+        whenToUse: 'Use for a rare meteorological lookup.',
+        keywords: ['forecast', 'rainfall'],
+        source: 'builtin',
+        trust: 'builtin',
+        ptcCompatible: true,
+      },
+    ]
+    const ranker = new CapabilityRanker()
+    const snapshot = buildCatalogSnapshot(catalog)
+    const queries = [
+      { query: 'tool:weather_lookup' },
+      { query: 'weather_lookup' },
+      { query: 'rainfall' },
+      { query: 'meteorological' },
+      { query: 'rare meteorological lookup', visible: ['tool:weather_lookup'] },
+      { query: 'uppercase text', kind: 'tool' as const, requirePtcCompatible: true },
+      { query: 'nothing-matches' },
+    ]
+    for (const query of queries) {
+      expect(ranker.rankIndexed(snapshot, query)).toEqual(ranker.rank(catalog, query))
+    }
   })
 })
 

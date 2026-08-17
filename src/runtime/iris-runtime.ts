@@ -12,13 +12,17 @@ import {
   demandFromUnknownTool,
   CAPABILITY_PACK_ORDER,
   capabilityPackForTool,
-  searchCapabilityCatalog,
+  buildCatalogSnapshot,
+  capabilityCatalogFingerprint,
+  creationBriefFor,
+  searchCapabilitySnapshot,
   selectIrisModePolicy,
   routeCapability,
   type CapabilityRoute,
   type CapabilityDemand,
   type CapabilitySearchResult,
   type IrisModePolicy,
+  type CatalogSnapshot,
 } from '../capabilities/index.js'
 import type { ConfiguredPolicy, IrisLogLevel } from '../config.js'
 import type { PluginFinder, RankedPluginCandidate } from '../discovery/index.js'
@@ -39,6 +43,7 @@ import {
 } from '../dsh/index.js'
 import { MountCoordinator } from '../mounting/coordinator.js'
 import { DirectFiberMountAdapter } from '../mounting/direct-fiber.js'
+import type { CapabilityDescriptor, CapabilityRequirement, CreationBrief } from '../domain/index.js'
 import type { LocalProviderCatalog } from '../providers/index.js'
 import type { RetryHandoff } from '../retry-handoff/index.js'
 import {
@@ -82,7 +87,11 @@ export type IrisRuntimeOutcome =
     readonly evaluation: IrisEvaluation
     readonly candidates: readonly RankedPluginCandidate[]
   }
-  | { readonly status: 'creator-fallback'; readonly evaluation: IrisEvaluation }
+  | {
+    readonly status: 'creation-brief'
+    readonly evaluation: IrisEvaluation
+    readonly brief: CreationBrief
+  }
   | { readonly status: 'blocked'; readonly evaluation?: IrisEvaluation; readonly reason: string }
 
 export interface IrisRuntimeOptions {
@@ -122,6 +131,13 @@ function mergeContext(
   }
 }
 
+function creationBriefText(brief: CreationBrief): string {
+  return `Capability ${brief.capabilityId} does not currently exist in the active catalog. `
+    + 'The native DSH Creator route is available for the next normal model step. '
+    + 'Use cordis_define and, only after the normal DSH decision, cordis_run; Iris does not define, execute, install, or replay a Tool. '
+    + `This CreationBrief is a suggested scaffold, not a Tool result or generated schema: ${JSON.stringify(brief)}`
+}
+
 /** One Agent's Demand-to-Reveal control layer. */
 export class IrisRuntime {
   readonly agent: Agent
@@ -142,6 +158,8 @@ export class IrisRuntime {
   private presetValue: AgentPresetIdentity | undefined
   private surfaceValue: DshCapabilitySurface | undefined
   private runtimeCtx: Context | undefined
+  private capabilityIndexValue: CatalogSnapshot | undefined
+  private localCapabilitiesValue: readonly CapabilityDescriptor[] | undefined
   private readonly recommendedQueries = new Set<string>()
   private static readonly RECOMMENDED_QUERY_LIMIT = 256
 
@@ -201,10 +219,11 @@ export class IrisRuntime {
     const fingerprint = query.trim().toLowerCase().replace(/\s+/gu, ' ')
     if (this.recommendedQueries.has(fingerprint)) return { deduplicated: true, results: [] }
     this.rememberRecommendation(fingerprint)
+    const snapshot = await this.discoverySnapshot(signal)
     return {
       deduplicated: false,
-      results: this.projectDiscoveryRoutes(searchCapabilityCatalog(
-        await this.discoveryCapabilities(signal),
+      results: this.projectDiscoveryRoutes(searchCapabilitySnapshot(
+        snapshot,
         {
           query,
           visible: this.surface.snapshot().visible,
@@ -287,8 +306,8 @@ export class IrisRuntime {
     demand: Extract<CapabilityDemand, { kind: 'search' }>,
     signal?: AbortSignal,
   ): Promise<readonly CapabilitySearchResult[]> {
-    return this.discoveryCapabilities(signal).then(catalog => this.projectDiscoveryRoutes(searchCapabilityCatalog(
-      catalog,
+    return this.discoverySnapshot(signal).then(snapshot => this.projectDiscoveryRoutes(searchCapabilitySnapshot(
+      snapshot,
       { query: demand.query, ...demand.capabilityKind === undefined ? {} : { kind: demand.capabilityKind } },
     )))
   }
@@ -333,6 +352,12 @@ export class IrisRuntime {
           capabilityId: outcome.capabilityId,
           route: outcome.route,
         }
+      case 'creation-brief':
+        return {
+          status: 'creation-brief',
+          capabilityId: outcome.brief.capabilityId,
+          brief: outcome.brief,
+        }
       case 'not-found':
         return {
           status: 'not-found',
@@ -351,7 +376,6 @@ export class IrisRuntime {
         return { status: 'denied', capabilityId: demand.requirement.id, reason: 'policy-declined' }
       case 'searched':
       case 'discovered':
-      case 'creator-fallback':
         return { status: 'blocked', capabilityId: demand.requirement.id, reason: 'invalid-runtime-outcome' }
     }
   }
@@ -438,7 +462,9 @@ export class IrisRuntime {
       })
     }
 
-    if (demand.kind === 'explicit-activation' && evaluation.resolution.status === 'missing') {
+    if (demand.kind === 'explicit-activation'
+      && evaluation.resolution.status === 'missing'
+      && !(this.modePolicy.creation === 'fallback' && requirement.kind === 'tool')) {
       return this.record({ status: 'not-found', evaluation })
     }
     if (demand.kind === 'explicit-activation' && evaluation.decision.action === 'noop') {
@@ -535,15 +561,20 @@ export class IrisRuntime {
     }
 
     if (demand.kind === 'explicit-activation') {
+      if (evaluation.resolution.status === 'missing') {
+        return this.creationOutcome(requirement, evaluation, cancellation)
+      }
       return this.record({ status: 'evaluated', evaluation })
     }
 
+    if (cancellation.aborted) {
+      return this.record({ status: 'evaluated', evaluation })
+    }
     if (this.modePolicy.remoteDiscovery === 'disabled'
       || evaluation.decision.action === 'noop'
       || evaluation.decision.action === 'observe'
-      || this.finder === undefined
-      || cancellation.aborted) {
-      return this.record({ status: 'evaluated', evaluation })
+      || this.finder === undefined) {
+      return this.creationOutcome(requirement, evaluation, cancellation)
     }
     let candidates: readonly RankedPluginCandidate[]
     try {
@@ -562,9 +593,7 @@ export class IrisRuntime {
     if (candidates.length > 0) {
       return this.record({ status: 'discovered', evaluation, candidates })
     }
-    return this.record(this.modePolicy.creation === 'fallback'
-      ? { status: 'creator-fallback', evaluation }
-      : { status: 'evaluated', evaluation })
+    return this.creationOutcome(requirement, evaluation, cancellation)
   }
 
   recover(
@@ -592,6 +621,8 @@ export class IrisRuntime {
       this.runtimeFiber = undefined
       this.surfaceValue = undefined
       this.runtimeCtx = undefined
+      this.capabilityIndexValue = undefined
+      this.localCapabilitiesValue = undefined
     })()
   }
 
@@ -638,6 +669,7 @@ export class IrisRuntime {
       if (downstream.kind !== 'accept') return downstream
       const signal = observeUnknownTool(exec, result)
       if (signal === undefined || exec.agent !== this.agent) return downstream
+      if (exec.signal.aborted) return downstream
       try {
         const handled = await this.recover(signal, exec.signal)
         if (handled.status === 'capability-ready' && handled.handoff !== undefined) {
@@ -655,6 +687,9 @@ export class IrisRuntime {
         if (handled.status === 'discovered') {
           return mergeContext(downstream, discoveryText(this.modePolicy, handled.candidates))
         }
+        if (handled.status === 'creation-brief' && !exec.signal.aborted) {
+          return mergeContext(downstream, creationBriefText(handled.brief))
+        }
       } catch (error: unknown) {
         this.info(`demand handling failed for ${exec.name}: ${String(error)}`)
       }
@@ -667,15 +702,43 @@ export class IrisRuntime {
     return outcome
   }
 
-  private async discoveryCapabilities(signal?: AbortSignal) {
-    const tools = this.catalog.list()
+  private async discoverySnapshot(signal?: AbortSignal): Promise<CatalogSnapshot> {
+    const tools = this.localCapabilitiesValue ??= this.catalog.list()
       .map(candidate => candidate.capability)
       .filter(capability => capability.kind === 'tool')
     const skills = await this.skillSource.list(signal)
     const mcp = this.mcpSource.list()
     const native = this.surface.nativeCapabilities()
-    return [...new Map([...native, ...tools, ...skills, ...mcp]
+    const capabilities = [...new Map([...native, ...tools, ...skills, ...mcp]
       .map(capability => [capability.id, capability])).values()]
+    const fingerprint = capabilityCatalogFingerprint(capabilities)
+    if (this.capabilityIndexValue?.fingerprint !== fingerprint) {
+      this.capabilityIndexValue = buildCatalogSnapshot(capabilities)
+    }
+    return this.capabilityIndexValue
+  }
+
+  private async discoveryCapabilities(signal?: AbortSignal): Promise<readonly CapabilityDescriptor[]> {
+    return (await this.discoverySnapshot(signal)).capabilities
+  }
+
+  private creationOutcome(
+    requirement: CapabilityRequirement,
+    evaluation: IrisEvaluation,
+    cancellation: AbortSignal,
+  ): IrisRuntimeOutcome {
+    if (this.modePolicy.creation !== 'fallback' || requirement.kind !== 'tool') {
+      return this.record({ status: 'evaluated', evaluation })
+    }
+    if (cancellation.aborted) return this.record({ status: 'blocked', evaluation, reason: 'cancelled' })
+    if (!this.surface.revealPack('creator', 'creation-brief')) {
+      return this.record({ status: 'blocked', evaluation, reason: 'creator-pack-reveal-failed' })
+    }
+    return this.record({
+      status: 'creation-brief',
+      evaluation,
+      brief: creationBriefFor(requirement),
+    })
   }
 
   /** Hidden native Skill/MCP routes first disclose their pack through iris_activate. */

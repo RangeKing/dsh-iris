@@ -4,6 +4,7 @@ import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
 import type { CapabilityRoute } from '../capabilities/index.js'
+import type { CreationBrief } from '../domain/index.js'
 
 export const IRIS_ACTIVATE_TOOL_NAME = 'iris_activate'
 
@@ -24,6 +25,11 @@ export type IrisActivationControlResult =
     readonly capabilityId: string
     readonly route: Extract<CapabilityRoute, { kind: 'dsh-mcp-tool' }>
   }
+  | {
+    readonly status: 'creation-brief'
+    readonly capabilityId: string
+    readonly brief: CreationBrief
+  }
   | { readonly status: 'not-found'; readonly capabilityId: string; readonly reason: 'not-catalogued' }
   | { readonly status: 'denied'; readonly capabilityId: string; readonly reason: string }
   | { readonly status: 'blocked'; readonly capabilityId: string; readonly reason: string }
@@ -40,6 +46,19 @@ function readinessContext(result: Extract<IrisActivationControlResult, { status:
     content: [{
       type: 'text',
       text: `Iris capability ${result.capabilityId} ${timing}. Continue through the normal Agent loop; any Tool call still passes DSH policy, guard, approval, execution, and cancellation handling.`,
+    }],
+    source: { kind: 'plugin', plugin: 'dsh-iris' },
+  })
+}
+
+function creationBriefContext(result: Extract<IrisActivationControlResult, { status: 'creation-brief' }>) {
+  return createUserMessage({
+    content: [{
+      type: 'text',
+      text: `Capability ${result.brief.capabilityId} is not currently available. `
+        + 'A deterministic CreationBrief is ready for the native DSH Creator route. '
+        + 'Use the normal cordis_define and cordis_run decisions; Iris does not define or execute the capability. '
+        + `Brief: ${JSON.stringify(result.brief)}`,
     }],
     source: { kind: 'plugin', plugin: 'dsh-iris' },
   })
@@ -63,6 +82,7 @@ export function installIrisActivate(
     async execute(args, exec): Promise<JsonValue> {
       const result = await options.activate(args.capabilityId, exec.signal)
       if (result.status === 'capability-ready') exec.deferContext(readinessContext(result))
+      if (result.status === 'creation-brief') exec.deferContext(creationBriefContext(result))
       return result as JsonValue
     },
   }))

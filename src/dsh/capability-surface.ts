@@ -62,7 +62,7 @@ export interface DshCapabilitySurfaceOptions {
 export interface IrisSurfaceTransition {
   readonly sequence: number
   readonly pack: CapabilityPackId
-  readonly reason: 'explicit-activation' | 'unknown-tool' | 'provider-activation'
+  readonly reason: 'explicit-activation' | 'unknown-tool' | 'provider-activation' | 'creation-brief'
 }
 
 export interface IrisSurfaceMetrics {
@@ -143,14 +143,13 @@ export class DshCapabilitySurface {
     if (this.started) return
     this.started = true
 
-    const ceiling = this.agentCtx.tools.schemas(this.agent)
-    for (const tool of ceiling) {
-      const descriptor = runtimeToolDescriptor(tool)
-      this.descriptors.set(descriptor.id, descriptor)
-      this.ceilingByName.set(descriptor.name, descriptor)
-      this.state.catalogue(descriptor.id)
-      this.state.activate(descriptor.id)
-    }
+    this.refreshNativeCeiling()
+    // ToolRuntime emits this official event for registration, unregistration,
+    // and restriction changes. It is the only invalidation seam Iris needs.
+    this.disposers.push(this.agentCtx.on('tools/change', () => {
+      this.refreshNativeCeiling()
+    }))
+    const ceiling = [...this.ceilingByName.values()]
 
     if (this.policy.id === 'preserve') {
       for (const descriptor of this.ceilingByName.values()) this.state.reveal(descriptor.id)
@@ -242,6 +241,7 @@ export class DshCapabilitySurface {
   }
 
   nativeCandidate(capabilityId: string): CapabilityDescriptor | undefined {
+    this.refreshNativeCeiling()
     const descriptor = this.descriptors.get(capabilityId)
     if (descriptor?.provenance?.kind !== 'dsh-runtime') return undefined
     return {
@@ -253,6 +253,7 @@ export class DshCapabilitySurface {
   }
 
   nativeCapabilities(): readonly CapabilityDescriptor[] {
+    this.refreshNativeCeiling()
     return [...this.ceilingByName.values()]
   }
 
@@ -264,13 +265,24 @@ export class DshCapabilitySurface {
     capabilityId: string,
     reason: 'explicit-activation' | 'unknown-tool',
   ): boolean {
-    if (this.policy.id === 'preserve') return false
+    this.refreshNativeCeiling()
     const requested = this.nativeCandidate(capabilityId)
     if (requested === undefined) return false
     const pack = capabilityPackForTool(requested.name)
+    return this.revealPack(pack, reason) && this.agentCtx.tools.get(requested.name, this.agent) !== undefined
+  }
+
+  /** Reveal one native DSH pack and let the native prompt assembly restore its guidance. */
+  revealPack(
+    pack: CapabilityPackId,
+    reason: IrisSurfaceTransition['reason'],
+  ): boolean {
+    if (this.policy.id === 'preserve') return false
     if (pack === 'creator' && this.policy.id !== 'adaptive-creator') return false
+    this.refreshNativeCeiling()
     const packCapabilities = [...this.ceilingByName.values()]
       .filter(capability => capabilityPackForTool(capability.name) === pack)
+    if (packCapabilities.length === 0) return false
     for (const capability of packCapabilities) this.activeAllow.add(capability.name)
     this.replaceRestriction()
     this.state.revealPack(pack)
@@ -283,7 +295,7 @@ export class DshCapabilitySurface {
       this.reasoningScaffoldDisposer = undefined
     }
     this.recordTransition(pack, reason)
-    return this.agentCtx.tools.get(requested.name, this.agent) !== undefined
+    return packCapabilities.every(capability => this.agentCtx.tools.get(capability.name, this.agent) !== undefined)
   }
 
   transitions(): readonly IrisSurfaceTransition[] {
@@ -329,6 +341,25 @@ export class DshCapabilitySurface {
     this.descriptors.set(descriptor.id, descriptor)
     this.state.activate(descriptor.id)
     this.state.pin(descriptor.id)
+  }
+
+  private refreshNativeCeiling(): void {
+    const observed = [
+      ...this.agentCtx.tools.schemas(),
+      ...this.agentCtx.tools.schemas(this.agent),
+    ]
+    for (const tool of observed) {
+      if (tool.name === IRIS_SEARCH_TOOL_NAME
+        || tool.name === IRIS_ACTIVATE_TOOL_NAME
+        || tool.name === IRIS_RECOMMEND_TOOL_NAME) continue
+      const descriptor = runtimeToolDescriptor(tool)
+      const existing = this.descriptors.get(descriptor.id)
+      if (existing?.provenance?.kind === 'iris-control') continue
+      this.descriptors.set(descriptor.id, descriptor)
+      this.ceilingByName.set(descriptor.name, descriptor)
+      this.state.catalogue(descriptor.id)
+      this.state.activate(descriptor.id)
+    }
   }
 
   private replaceRestriction(): void {

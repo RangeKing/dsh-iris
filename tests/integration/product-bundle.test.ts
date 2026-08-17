@@ -823,20 +823,139 @@ describe('dsh-iris v0.1 Bundle product path', () => {
     await ctx.fiber.dispose()
   })
 
-  it('records creator-fallback when Creation discovery is exhausted', async () => {
+  it('hands a deterministic CreationBrief to the native Creator route when discovery is exhausted', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       items: [],
     }), { status: 200 })))
     const ctx = await harness({ iris: { logLevel: 'silent', providers: [] } })
+    registerNativeTools(ctx, [
+      'cordis_inspect_list',
+      'cordis_inspect_query',
+      'cordis_inspect_self',
+      'cordis_define',
+      'cordis_run',
+      'cordis_stop',
+      'cordis_undefine',
+    ])
     const owner = await publishAgent(ctx, 'cordis', 'creation-fallback')
+    await runtimeFor(ctx, owner.agent)
 
     const result = await executeMissing(ctx, owner.agent, 'missing_everywhere')
 
-    expect(result.additionalContexts).toBeUndefined()
-    expect(ctx.iris.runtimeFor(owner.agent)?.lastOutcome).toMatchObject({
-      status: 'creator-fallback',
-      evaluation: { policyId: 'evolve' },
+    expect(result.error?.info?.code).toBe('UNKNOWN_TOOL')
+    expect(result.additionalContexts?.[0]?.content).toContainEqual({
+      type: 'text',
+      text: expect.stringContaining('CreationBrief'),
     })
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeDefined()
+    expect(ctx.iris.runtimeFor(owner.agent)?.lastOutcome).toMatchObject({
+      status: 'creation-brief',
+      evaluation: { policyId: 'evolve' },
+      brief: {
+        capabilityId: 'tool:missing_everywhere',
+        suggestedName: 'missing_everywhere',
+        route: 'dsh-cordis',
+      },
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it.each([
+    ['preserve', 'preserve', 'not-found'],
+    ['adaptive', 'adaptive', 'not-found'],
+    ['adaptive-code', 'adaptive-code', 'not-found'],
+    ['adaptive-creator', 'adaptive-creator', 'creation-brief'],
+  ] as const)('keeps explicit missing activation scoped to the %s policy', async (_label, policy, expected) => {
+    const ctx = await harness({ iris: { policy, logLevel: 'silent', providers: [] } })
+    if (policy === 'adaptive-creator') {
+      registerNativeTools(ctx, [
+        'cordis_inspect_list',
+        'cordis_inspect_query',
+        'cordis_inspect_self',
+        'cordis_define',
+        'cordis_run',
+        'cordis_stop',
+        'cordis_undefine',
+      ])
+    }
+    const owner = await publishAgent(ctx, 'standard', `explicit-missing-${policy}`)
+    const runtime = await runtimeFor(ctx, owner.agent)
+    await expect(runtime.activate('tool:missing_explicit', new AbortController().signal))
+      .resolves.toMatchObject({ status: expected })
+    await ctx.fiber.dispose()
+  })
+
+  it('hands explicit iris_activate creation through deferContext without changing the control result', async () => {
+    const ctx = await harness({ iris: { policy: 'adaptive-creator', logLevel: 'silent', providers: [] } })
+    registerNativeTools(ctx, ['cordis_define', 'cordis_run'])
+    const owner = await publishAgent(ctx, 'standard', 'explicit-creation-brief')
+    await runtimeFor(ctx, owner.agent)
+    const result = await activateCapability(ctx, owner.agent, 'tool:missing_explicit', 'explicit-creation-brief-call')
+
+    expect(result).toMatchObject({
+      isError: false,
+      value: {
+        status: 'creation-brief',
+        capabilityId: 'tool:missing_explicit',
+        brief: { route: 'dsh-cordis' },
+      },
+    })
+    expect(result.additionalContexts?.[0]?.content).toContainEqual({
+      type: 'text',
+      text: expect.stringContaining('cordis_define'),
+    })
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeDefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('does not reveal the Creator pack when cancellation arrives before a Creation handoff', async () => {
+    const ctx = await harness({ iris: { policy: 'adaptive-creator', logLevel: 'silent', providers: [] } })
+    registerNativeTools(ctx, [
+      'cordis_inspect_list',
+      'cordis_inspect_query',
+      'cordis_inspect_self',
+      'cordis_define',
+      'cordis_run',
+      'cordis_stop',
+      'cordis_undefine',
+    ])
+    const owner = await publishAgent(ctx, 'standard', 'creation-cancelled')
+    const runtime = await runtimeFor(ctx, owner.agent)
+    const cancellation = new AbortController()
+    cancellation.abort()
+    await expect(runtime.recover({
+      kind: 'capability-failure',
+      capability: { kind: 'tool', name: 'cancelled_capability' },
+      owner: { agentId: owner.agent.id },
+      evidence: {
+        source: 'tools/result',
+        callId: 'cancelled-call',
+        errorName: 'ToolNotFoundError',
+        errorCode: 'UNKNOWN_TOOL',
+      },
+    }, cancellation.signal)).resolves.toMatchObject({ status: 'evaluated' })
+    expect(runtime.surface.snapshot().revealedPacks).toEqual(['core'])
+    expect(ctx.tools.get('cordis_define', owner.agent)).toBeUndefined()
+    await ctx.fiber.dispose()
+  })
+
+  it('observes a Tool registered after startup through DSH tools/change and the next Iris snapshot', async () => {
+    const ctx = await harness({ iris: { policy: 'adaptive', logLevel: 'silent', providers: [] } })
+    const owner = await publishAgent(ctx, 'standard', 'dynamic-ceiling')
+    const runtime = await runtimeFor(ctx, owner.agent)
+    registerNativeTools(ctx, ['late_registered_tool'])
+
+    await expect(runtime.search('late_registered_tool', 'tool'))
+      .resolves.toContainEqual(expect.objectContaining({ capability: expect.objectContaining({
+        id: 'tool:late_registered_tool',
+      }) }))
+    expect((await runtime.snapshot()).capabilities).toContainEqual(expect.objectContaining({
+      id: 'tool:late_registered_tool',
+      origin: 'dsh-runtime',
+    }))
+    await expect(runtime.activate('tool:late_registered_tool', new AbortController().signal))
+      .resolves.toMatchObject({ status: 'capability-ready' })
+    expect(ctx.tools.get('late_registered_tool', owner.agent)).toBeDefined()
     await ctx.fiber.dispose()
   })
 

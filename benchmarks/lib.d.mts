@@ -15,13 +15,46 @@ export interface BenchmarkTask {
 }
 
 export interface BenchmarkRecord {
+  readonly schemaVersion?: number
   readonly measurementKind: string
+  readonly evidenceLevel?: 'synthetic' | 'exploratory' | 'primary'
+  readonly runId?: string
+  readonly sampleId?: string
+  readonly pairId?: string
+  readonly order?: number
+  readonly timestamp?: string
+  readonly taskId?: string
   readonly mode?: string
   readonly variant?: string
+  readonly model?: string
+  readonly modelAlias?: string
+  readonly harnessVersion?: string
+  readonly irisVersion?: string | null
+  readonly workspaceId?: string
   readonly verifier?: { readonly passed: boolean }
-  readonly usage?: { readonly inputTokens?: number; readonly outputTokens?: number }
-  readonly metrics?: { readonly turnCount?: number }
-  readonly surface?: { readonly initialVisibleTools?: number }
+  readonly usage?: {
+    readonly inputTokens?: number | null
+    readonly cachedInputTokens?: number | null
+    readonly outputTokens?: number | null
+    readonly reasoningTokens?: number | null
+  }
+  readonly metrics?: {
+    readonly turnCount?: number | null
+    readonly assistantSteps?: number | null
+    readonly toolCallCount?: number | null
+    readonly toolErrorCount?: number | null
+    readonly unknownToolCount?: number | null
+    readonly unknownToolRecoveredCount?: number | null
+    readonly wallTimeMs?: number | null
+  }
+  readonly surface?: {
+    readonly firstRequestVisibleToolCount?: number | null
+    readonly firstRequestToolSchemaChars?: number | null
+    readonly firstRequestSystemPromptChars?: number | null
+    readonly codeSdkChars?: number | null
+    readonly packTransitions?: number | null
+    readonly initialVisibleTools?: number | null
+  }
 }
 
 export function verifyTask(

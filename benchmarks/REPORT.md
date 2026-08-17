@@ -1,16 +1,31 @@
 # dsh-iris benchmark report
 
-Generated from `benchmarks/results/smoke.jsonl`. Synthetic harness validation records are excluded from performance aggregates.
+Raw JSONL: `benchmarks/results/smoke.jsonl`<br>
+Generated: 2026-08-17T08:54:47.723Z<br>
+Observed evidence levels: synthetic
 
-**Reproducible benchmark included. Live V4-Pro results pending.**
+Evidence classification is explicit: synthetic records are deterministic structural checks; exploratory records are live or low-sample observations; primary records require a fixed checkpoint and complete paired metadata. A requested primary label is downgraded to exploratory when those facts are absent. The default recommendation is 20 repeated paired samples; it is not a universal statistical threshold.
 
-| Mode | Vanilla success | Iris success | Δ success | Δ input tokens | Δ turns | Initial surface reduction |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| minimal | pending | pending | — | — | — | — |
-| standard | pending | pending | — | — | — | — |
-| code | pending | pending | — | — | — | — |
-| cordis | pending | pending | — | — | — | — |
+## Records
 
-## Configuration discipline
+| Mode | Variant | Evidence | n | Model | Run dates | Success | Avg input tokens | Avg assistant steps |
+| --- | --- | --- | ---: | --- | --- | ---: | ---: | ---: |
+| minimal | vanilla | — | — | — | — | — | — | — |
+| minimal | iris | — | — | — | — | — | — | — |
+| standard | vanilla | — | — | — | — | — | — | — |
+| standard | iris | — | — | — | — | — | — | — |
+| code | vanilla | — | — | — | — | — | — | — |
+| code | iris | — | — | — | — | — | — | — |
+| cordis | vanilla | — | — | — | — | — | — | — |
+| cordis | iris | — | — | — | — | — | — | — |
 
-Both variants use the same task, model string, reasoning effort, temperature, top-p, timeout, and retry policy. The runner records whether the model string is a rolling alias; it does not infer a pinned checkpoint. Raw records remain the authority.
+## Paired description
+
+| Mode | n vanilla/iris | Success vanilla / iris | Δ success | Δ input tokens | Δ assistant steps |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| minimal | pending | pending | — | — | — |
+| standard | pending | pending | — | — | — |
+| code | pending | pending | — | — | — |
+| cordis | pending | pending | — | — | — |
+
+The paired table is descriptive. Δ success is withheld until both variants have at least 20 samples, and no low-sample row is converted into a causal “improves performance by X%” conclusion. Raw JSONL remains authoritative; missing provider usage is recorded as null/unavailable rather than estimated.

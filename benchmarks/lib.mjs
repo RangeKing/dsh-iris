@@ -103,6 +103,9 @@ export function aggregateLive(records) {
     const cell = cells.get(key) ?? {
       mode: record.mode,
       variant: record.variant,
+      evidenceLevels: new Set(),
+      modelStrings: new Set(),
+      runDates: new Set(),
       runs: 0,
       successes: 0,
       inputTokens: 0,
@@ -111,11 +114,16 @@ export function aggregateLive(records) {
       outputTokenSamples: 0,
       turns: 0,
       turnSamples: 0,
+      assistantSteps: 0,
+      assistantStepSamples: 0,
       initialVisibleTools: 0,
       initialVisibleToolSamples: 0,
     }
+    cell.evidenceLevels.add(record.evidenceLevel ?? 'exploratory')
+    if (typeof record.model === 'string') cell.modelStrings.add(record.model)
+    if (typeof record.timestamp === 'string') cell.runDates.add(record.timestamp.slice(0, 10))
     cell.runs += 1
-    cell.successes += record.verifier.passed ? 1 : 0
+    cell.successes += record.verifier?.passed === true ? 1 : 0
     if (Number.isFinite(record.usage?.inputTokens)) {
       cell.inputTokens += record.usage.inputTokens
       cell.inputTokenSamples += 1
@@ -128,6 +136,10 @@ export function aggregateLive(records) {
       cell.turns += record.metrics.turnCount
       cell.turnSamples += 1
     }
+    if (Number.isFinite(record.metrics?.assistantSteps)) {
+      cell.assistantSteps += record.metrics.assistantSteps
+      cell.assistantStepSamples += 1
+    }
     if (Number.isFinite(record.surface?.initialVisibleTools)) {
       cell.initialVisibleTools += record.surface.initialVisibleTools
       cell.initialVisibleToolSamples += 1
@@ -136,10 +148,17 @@ export function aggregateLive(records) {
   }
   return [...cells.values()].map(cell => ({
     ...cell,
+    n: cell.runs,
+    evidenceLevels: [...cell.evidenceLevels].sort(),
+    modelStrings: [...cell.modelStrings].sort(),
+    runDates: [...cell.runDates].sort(),
     successRate: cell.runs === 0 ? null : cell.successes / cell.runs,
     averageInputTokens: cell.inputTokenSamples === 0 ? null : cell.inputTokens / cell.inputTokenSamples,
     averageOutputTokens: cell.outputTokenSamples === 0 ? null : cell.outputTokens / cell.outputTokenSamples,
     averageTurns: cell.turnSamples === 0 ? null : cell.turns / cell.turnSamples,
+    averageAssistantSteps: cell.assistantStepSamples === 0
+      ? null
+      : cell.assistantSteps / cell.assistantStepSamples,
     averageInitialVisibleTools: cell.initialVisibleToolSamples === 0
       ? null
       : cell.initialVisibleTools / cell.initialVisibleToolSamples,

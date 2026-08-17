@@ -148,6 +148,40 @@ describe('DSH capability visibility seam', () => {
     await ctx.fiber.dispose()
   })
 
+  it('refreshes the native ceiling from DSH tools/change without a second registry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    ctx.tools.register(tool('bash'))
+    const draft = { id: 'iris-dynamic-ceiling' }
+    const scope = createScope(ctx, draft)
+    const agent = Object.assign(draft, { ctx: scope.ctx })
+    Object.defineProperty(scope.ctx, 'agent', { value: agent })
+    let surface!: DshCapabilitySurface
+    await scope.ctx.plugin(Object.assign((inner: Context) => {
+      surface = new DshCapabilitySurface(
+        inner,
+        irisModePolicyFor('adaptive'),
+        new ConfiguredLocalProviderCatalog([]),
+      )
+      inner.effect(() => {
+        surface.start()
+        return () => { surface.dispose() }
+      })
+    }, { inject: ['tools', 'systemPrompt'] }))
+
+    expect(surface.nativeCandidate('tool:late_tool')).toBeUndefined()
+    ctx.tools.register(tool('late_tool'))
+    expect(surface.nativeCandidate('tool:late_tool')).toMatchObject({
+      id: 'tool:late_tool',
+      provenance: { kind: 'dsh-runtime' },
+    })
+    expect(surface.revealNative('tool:late_tool', 'explicit-activation')).toBe(true)
+    expect(ctx.tools.get('late_tool', agent)).toBeDefined()
+    await scope.dispose()
+    await ctx.fiber.dispose()
+  })
+
   it('keeps Code SDK stable until the next assembly commits a staged pack', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})

@@ -15,13 +15,19 @@ export async function runBenchmarkCase(input) {
     usage: {},
     metrics: {
       turnCount: 1,
+      assistantSteps: 1,
       toolCallCount: 0,
+      toolErrorCount: 0,
+      unknownToolCount: 0,
+      unknownToolRecoveredCount: 0,
       wallTimeMs: 0,
     },
     surface: {
       initialVisibleTools: input.variant === 'iris' ? 2 : 8,
+      firstRequestVisibleToolCount: input.variant === 'iris' ? 2 : 8,
       maxVisibleTools: input.variant === 'iris' ? 2 : 8,
       transitions: [],
+      packTransitions: [],
     },
   }
 }

@@ -1,6 +1,8 @@
 import type { CapabilityDescriptor, CapabilityKind } from '../domain/index.js'
 import {
   capabilityRanker,
+  rankIndexed,
+  type CatalogSnapshot,
   type CapabilityRankQuery,
   type CapabilityRankResult,
 } from './rank.js'
@@ -27,6 +29,21 @@ export function searchCapabilityCatalog(
   query: CapabilitySearchQuery,
 ): readonly CapabilitySearchResult[] {
   return capabilityRanker.rank(catalog, query).map((result) => {
+    const route = routeCapability(result.capability)
+    return {
+      ...result,
+      route,
+      status: routeStatus(route),
+    }
+  })
+}
+
+/** Search a prebuilt snapshot while retaining the legacy ranker's semantics. */
+export function searchCapabilitySnapshot(
+  snapshot: CatalogSnapshot,
+  query: CapabilitySearchQuery,
+): readonly CapabilitySearchResult[] {
+  return rankIndexed(snapshot, query).map((result) => {
     const route = routeCapability(result.capability)
     return {
       ...result,

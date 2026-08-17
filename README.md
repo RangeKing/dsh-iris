@@ -1,6 +1,6 @@
 # dsh-iris
 
-dsh-iris — progressive capability disclosure for DeepSeek Harness
+dsh-iris — Progressive capability routing for DeepSeek Harness
 
 **Start with what matters. Add more when needed.**
 
@@ -83,7 +83,7 @@ mcp:github/create_issue  → connected MCP Tool → direct DSH execution
 - `iris_activate(tool:...)` loads and verifies a configured local Provider once.
 - `iris_activate(skill:...)` delegates to the native DSH Skill route without loading the body itself.
 - An already-connected MCP Tool is returned as directly available; Iris does not reconnect it.
-- `UNKNOWN_TOOL` enters the same activation pipeline as a deterministic fallback. Iris never replays the failed call.
+- `UNKNOWN_TOOL` enters the same deterministic routing pipeline as a fallback. If Adaptive Creator has no local or discoverable candidate, Iris prepares a typed CreationBrief and reveals DSH's native Creator pack; Iris never replays the failed call.
 
 DSH remains responsible for the Agent loop, ToolRuntime, Skills, MCP transport, Code SDK, approval, guards, execution, cancellation, sessions, and Cordis lifecycle.
 
@@ -128,6 +128,9 @@ See [examples/local-text-tools](examples/local-text-tools) for a dependency-free
 - Unified metadata discovery and routing across configured Tools, model-invocable DSH Skills, and connected MCP Tools.
 - Step-stable Code SDK updates between normal model steps.
 - `additionalContexts` handoff after recovery; no transparent Tool replay.
+- Complete capability lifecycle: Search → Reveal / Mount / Delegate → Discover → Create → Resume.
+- CreationBrief handoff through DSH `cordis_define` / `cordis_run`; Iris does not generate schemas or execute the created Tool.
+- In-memory CatalogIndex V1 with legacy-ranker equivalence fallback and deterministic scale evidence.
 - English and Simplified Chinese DSH Web UI with writable settings and live capability telemetry.
 - Reproducible Vanilla-vs-Iris benchmark harness. Until a credentialed run is saved, [the report](benchmarks/REPORT.md) says results pending rather than inventing numbers.
 
@@ -139,6 +142,7 @@ The next features stay behind the same ownership rule:
 
 - benchmark-guided capability-pack tuning rather than hand-wavy “smaller is better” claims;
 - better task-aware recommendations when measured retrieval misses justify them;
+- multilingual retrieval evaluation before any semantic embedding runtime;
 - a community registry contract followed by explicit approval and installation;
 - broader Skill and MCP lifecycle support only where DSH exposes safe public, Agent-scoped seams;
 - evidence-guided adaptation across sessions without creating a second Agent loop.
