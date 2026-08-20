@@ -173,7 +173,8 @@ export class IrisRuntime {
     this.logLevel = options.logLevel
     this.coordinator = options.coordinator ?? new MountCoordinator(new DirectFiberMountAdapter())
     this.mcpSource = new DshMcpCapabilitySource(agentCtx)
-    this.skillSource = new DshSkillCapabilitySource(agentCtx)
+    // The Iris runtime context injects `skills`, which agent contexts do not.
+    this.skillSource = new DshSkillCapabilitySource(agentCtx, () => this.runtimeCtx ?? this.agentCtx)
   }
 
   get ready(): Promise<void> {
