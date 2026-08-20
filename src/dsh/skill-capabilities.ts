@@ -42,7 +42,14 @@ export class DshSkillCapabilitySource {
   private readonly agent: Agent
   private readonly nativeRouteInCeiling: boolean
 
-  constructor(private readonly agentCtx: Context) {
+  constructor(
+    private readonly agentCtx: Context,
+    /**
+     * Lazily-resolved context that provides `skills`. Agent contexts only inject
+     * `tools`, so the caller supplies the Iris runtime context, which injects it.
+     */
+    private readonly resolveSkillsCtx: () => Context = () => agentCtx,
+  ) {
     const agent = (agentCtx as Context & { readonly agent?: Agent }).agent
     if (agent === undefined) throw new Error('dsh-iris: DSH Skill source requires agentCtx.agent')
     this.agent = agent
@@ -52,7 +59,10 @@ export class DshSkillCapabilitySource {
 
   async list(signal?: AbortSignal): Promise<readonly CapabilityDescriptor[]> {
     if (!this.nativeRouteInCeiling) return []
-    const snapshot = await this.agentCtx.skills.snapshot({
+    // Resolve `skills` without the inject requirement; absence means no catalog.
+    const skills = this.resolveSkillsCtx().reflect.get('skills', false)
+    if (skills === undefined) return []
+    const snapshot = await skills.snapshot({
       cwd: this.agent.session.header.cwd,
       scope: this.agent,
       ...signal === undefined ? {} : { signal },
