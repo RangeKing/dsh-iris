@@ -21,7 +21,7 @@ describe('DSH connected MCP capability adapter', () => {
     expect(capability).toMatchObject({
       id: 'mcp:github/create_issue',
       kind: 'mcp',
-      name: 'create_issue',
+      name: 'mcp__github__create_issue',
       providerId: 'github',
       keywords: ['github', 'repository', 'title'],
       provenance: {
@@ -52,6 +52,19 @@ describe('DSH connected MCP capability adapter', () => {
       toolName: 'admin_reset_0123456789ab',
       dshToolName: 'mcp__srv__admin_reset_0123456789ab',
     })
+  })
+
+  it('addresses every MCP capability by its registered DSH Tool token', () => {
+    // The capability `name` feeds `tools.get`/`tools.restrict` through the
+    // surface's allow set, so it must equal the registered DSH token, never the
+    // abbreviated tool name (a bare name would fail the restrict allow check).
+    const registered = ['mcp__github__create_issue', 'mcp__github__list_issues', 'mcp__argo__argo_search']
+    const capabilities = registered
+      .map(name => mcpToolCapability({ name, description: 't', parameters: {} })!)
+    expect(capabilities.map(capability => capability.name).sort()).toEqual([...registered].sort())
+    for (const capability of capabilities) {
+      expect(registered).toContain(capability.name)
+    }
   })
 
   it('ranks Tool, Skill, and MCP metadata together deterministically', () => {

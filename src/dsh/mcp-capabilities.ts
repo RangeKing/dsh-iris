@@ -43,14 +43,20 @@ function parameterKeywords(parameters: unknown): readonly string[] {
   return Object.keys(properties).sort().slice(0, 16)
 }
 
-/** Map one already-registered DSH MCP Tool into metadata-only Iris discovery. */
+/**
+ * Map one already-registered DSH MCP Tool into metadata-only Iris discovery.
+ *
+ * `name` is the full DSH-registered Tool token (`mcp__<server>__<tool>`), the
+ * same token `tools.get`/`tools.restrict` address it by; the abbreviated name
+ * stays available in `provenance.toolName` (and the `id`).
+ */
 export function mcpToolCapability(tool: ToolSchemaObservation): CapabilityDescriptor | undefined {
   const identity = parseDshMcpToolName(tool.name)
   if (identity === undefined) return undefined
   return {
     id: `mcp:${identity.serverName}/${identity.toolName}`,
     kind: 'mcp',
-    name: identity.toolName,
+    name: identity.dshToolName,
     description: tool.description,
     keywords: [identity.serverName, ...parameterKeywords(tool.parameters)],
     source: 'installed',
